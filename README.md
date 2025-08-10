@@ -1,3 +1,5 @@
+- [README.guten.md](./README.guten.md)
+
 # ch.at - Universal Basic Intelligence
 
 A lightweight language model chat service accessible through HTTP, SSH, DNS, and API. One binary, no JavaScript, no tracking.
