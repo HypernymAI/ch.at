@@ -1,0 +1,10 @@
+services:
+  main:
+    image: gutenye/ch.at
+    build:
+      platforms:
+        - linux/arm64   
+        - linux/amd64
+    ports:
+      - 4000:80
+    env_file: .env
