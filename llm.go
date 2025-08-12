@@ -11,22 +11,10 @@ import (
 	"strings"
 )
 
-// Configuration - Replace with your API credentials
 var (
-	// Option 1: OpenAI API
 	apiKey    = os.Getenv("API_KEY")
 	apiURL    = os.Getenv("API_URL")
-	modelName = os.Getenv("MODEL_NAME") // or gpt-4, etc.
-
-	// Option 2: Anthropic Claude API (uncomment to use)
-	// apiKey     = "YOUR_API_KEY_HERE"
-	// apiURL     = "https://api.anthropic.com/v1/messages"
-	// modelName  = "claude-3-haiku" // or claude-3-opus, etc.
-
-	// Option 3: Local LLM (uncomment to use)
-	// apiKey     = "" // No API key needed for local models
-	// apiURL     = "http://localhost:11434/api/chat" // Ollama example
-	// modelName  = "llama2" // or mixtral, phi, etc.
+	modelName = os.Getenv("MODEL_NAME")
 )
 
 // LLM calls the language model. If stream is nil, returns complete response via return value.

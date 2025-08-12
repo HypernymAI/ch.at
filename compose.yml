@@ -1,10 +1,13 @@
 services:
   main:
-    image: gutenye/ch.at
+    image: deep-ai-inc/ch.at:latest
     build:
       platforms:
         - linux/arm64   
         - linux/amd64
     ports:
-      - 4000:80
+      - 80:80
+      - 443:443
+      - 53:53
+      - 22:22
     env_file: .env
