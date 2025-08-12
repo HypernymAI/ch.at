@@ -49,7 +49,7 @@ Privacy by design:
 ### Quick Start
 
 ```bash
-# Config your API key
+# Configure your API key
 # Supports OpenAI, Anthropic Claude, or local models (Ollama)
 # Option 1: OpenAI API
 export API_KEY="YOUR_API_KEY_HERE"
