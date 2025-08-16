@@ -7,25 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 )
 
-// Configuration - Replace with your API credentials
-const (
-	// Option 1: OpenAI API
-	apiKey    = "YOUR_API_KEY_HERE"
-	apiURL    = "https://api.openai.com/v1/chat/completions"
-	modelName = "gpt-3.5-turbo" // or gpt-4, etc.
-
-	// Option 2: Anthropic Claude API (uncomment to use)
-	// apiKey     = "YOUR_API_KEY_HERE"
-	// apiURL     = "https://api.anthropic.com/v1/messages"
-	// modelName  = "claude-3-haiku" // or claude-3-opus, etc.
-
-	// Option 3: Local LLM (uncomment to use)
-	// apiKey     = "" // No API key needed for local models
-	// apiURL     = "http://localhost:11434/api/chat" // Ollama example
-	// modelName  = "llama2" // or mixtral, phi, etc.
+var (
+	apiKey    = os.Getenv("API_KEY")
+	apiURL    = os.Getenv("API_URL")
+	modelName = os.Getenv("MODEL_NAME")
 )
 
 // LLM calls the language model. If stream is nil, returns complete response via return value.
@@ -44,7 +33,7 @@ func LLM(input interface{}, stream chan<- string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid input type")
 	}
-	
+
 	// Build request
 	requestBody := map[string]interface{}{
 		"model":       modelName,
@@ -52,7 +41,7 @@ func LLM(input interface{}, stream chan<- string) (string, error) {
 		"temperature": 0.7,
 		"max_tokens":  500,
 	}
-	
+
 	if stream != nil {
 		requestBody["stream"] = true
 		defer close(stream)
@@ -95,7 +84,7 @@ func LLM(input interface{}, stream chan<- string) (string, error) {
 				if data == "[DONE]" {
 					return "", nil
 				}
-				
+
 				var chunk map[string]interface{}
 				if err := json.Unmarshal([]byte(data), &chunk); err == nil {
 					if choices, ok := chunk["choices"].([]interface{}); ok && len(choices) > 0 {

@@ -47,11 +47,20 @@ Privacy by design:
 ### Quick Start
 
 ```bash
-# Copy the example LLM configuration (llm.go is gitignored)
-cp llm.go.example llm.go
-
-# Edit llm.go and add your API key
+# Configure your API key
 # Supports OpenAI, Anthropic Claude, or local models (Ollama)
+# Option 1: OpenAI API
+export API_KEY="YOUR_API_KEY_HERE"
+export API_URL="https://api.openai.com/v1/chat/completions"
+export MODEL_NAME="gpt-3.5-turbo" # or gpt-4, etc.
+# Option 2: Anthropic Claude API 
+export API_KEY="YOUR_API_KEY_HERE"
+export API_URL="https://api.anthropic.com/v1/messages"
+export MODEL_NAME="claude-3-haiku" # or claude-3-opus, etc.
+# Option 3: Local LLM 
+export API_KEY="" # No API key needed for local models
+export API_URL="http://localhost:11434/api/chat" # Ollama example
+export MODEL_NAME="llama2" # or mixtral, phi, etc.
 
 # For HTTPS, you'll need cert.pem and key.pem files:
 # Option 1: Use Let's Encrypt (recommended for production)
@@ -132,10 +141,13 @@ ops instance create chat -t gcp
 # Systemd service
 sudo cp chat /usr/local/bin/
 sudo systemctl enable chat.service
+```
 
-# Docker
-docker build -t chat .
-docker run -p 80:80 -p 443:443 -p 22:22 -p 53:53/udp chat
+#### Docker
+
+```sh
+cp .env.example .env # fill your api key
+docker compose up -d
 ```
 
 ## Configuration

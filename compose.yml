@@ -1,0 +1,13 @@
+services:
+  main:
+    image: deep-ai-inc/ch.at:latest
+    build:
+      platforms:
+        - linux/arm64   
+        - linux/amd64
+    ports:
+      - 80:80
+      - 443:443
+      - 53:53
+      - 22:22
+    env_file: .env

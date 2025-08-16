@@ -1,5 +1,5 @@
 # User-provided LLM backend
-llm.go
+.env
 
 # User-specific deployment config
 ops.json
