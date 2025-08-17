@@ -122,6 +122,7 @@ export class DoNutSentryClient {
    */
   private encodeBase32(text: string): string {
     // hi-base32 handles UTF-8 automatically
+    // Remove padding for DNS compatibility
     return base32.encode(text).toLowerCase().replace(/=/g, '');
   }
 
