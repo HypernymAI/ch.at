@@ -25,6 +25,15 @@ const htmlHeader = `<!DOCTYPE html>
         form { max-width: 568px; margin: 0 auto 3rem; display: flex; gap: .5rem; }
         input[type="text"] { width: 100%; padding: .5rem; }
         input[type="submit"] { padding: .5rem; }
+		@media (prefers-color-scheme: dark) {
+			body { background: #181a1b; color: #e8e6e3; }
+			.chat { background: #222326; }
+			.q { background: #23262a; color: #c9d1d9; }
+			.a { color: #e8e6e3; }
+			input[type="text"], input[type="submit"] { background: #23262a; color: #e8e6e3; border: 1px solid #444; }
+			form { background: #181a1b; }
+			a { color: #58a6ff; }
+		}
     </style>
 </head>
 <body>
@@ -318,13 +327,22 @@ type Choice struct {
 
 func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
+	w.Header().Set("Access-Control-Max-Age", "86400")
+
+	if r.Method == "OPTIONS" {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
 	if !rateLimitAllow(r.RemoteAddr) {
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 
 	if r.Method != "POST" {
-		w.Header().Set("Allow", "POST")
+		w.Header().Set("Allow", "POST, OPTIONS")
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
