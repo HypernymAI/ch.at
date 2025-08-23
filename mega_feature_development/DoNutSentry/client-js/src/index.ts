@@ -7,6 +7,7 @@ import { promisify } from 'util';
 import * as base32 from 'hi-base32';
 import { compress } from './compression';
 import { SessionManager } from './session';
+import { CustomResolver } from './custom-resolver';
 import { 
   DoNutSentryOptions, 
   QueryOptions, 
@@ -16,7 +17,7 @@ import {
 
 export class DoNutSentryClient {
   private domain: string;
-  private resolver: dnsPromises.Resolver;
+  private resolver: dnsPromises.Resolver | CustomResolver;
   private options: DoNutSentryOptions;
 
   constructor(options: DoNutSentryOptions = {}) {
@@ -27,9 +28,16 @@ export class DoNutSentryClient {
       ...options
     };
     
-    this.resolver = new dnsPromises.Resolver();
-    if (options.dnsServers) {
-      this.resolver.setServers(options.dnsServers);
+    // Check if custom port is specified
+    if (options.dnsServers && options.dnsServers.length > 0 && options.dnsServers[0].includes(':')) {
+      // Use custom resolver for non-standard ports
+      this.resolver = new CustomResolver(options.dnsServers[0]);
+    } else {
+      // Use standard resolver
+      this.resolver = new dnsPromises.Resolver();
+      if (options.dnsServers) {
+        this.resolver.setServers(options.dnsServers);
+      }
     }
   }
 
@@ -44,6 +52,11 @@ export class DoNutSentryClient {
     let metadata: any = { encoding };
 
     try {
+      // Handle session mode directly
+      if (encoding === 'session') {
+        return await this.queryWithSession(text, metadata, startTime);
+      }
+      
       // First, try to encode the query
       switch (encoding) {
         case 'simple':
@@ -194,15 +207,18 @@ export class DoNutSentryClient {
       metadata.sessionId = sessionId;
       metadata.mode = 'session';
 
-      // Compress the query
-      const compressed = await compress(Buffer.from(text, 'utf-8'));
-      const { chunks, totalChunks } = session.calculateChunks(text, compressed);
+      // Don't compress for now - server expects raw text
+      const textBuffer = Buffer.from(text, 'utf-8');
+      const { chunks, totalChunks } = session.calculateChunks(text, textBuffer);
       metadata.totalChunks = totalChunks;
 
       // Send chunks
       for (let i = 0; i < chunks.length; i++) {
         await session.sendChunk(sessionId, i, chunks[i]);
       }
+
+      // Small delay before execute to ensure all chunks are processed
+      await new Promise(resolve => setTimeout(resolve, 100));
 
       // Execute and get response
       const response = await session.execute(sessionId, totalChunks);

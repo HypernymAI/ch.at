@@ -38,8 +38,8 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			continue
 		}
 
-		// Check for DoNutSentry queries (*.q.ch.at)
-		if strings.HasSuffix(q.Name, ".q.ch.at.") {
+		// Check for DoNutSentry queries based on configured domain
+		if strings.HasSuffix(q.Name, donutSentryDomain) {
 			handleDoNutSentryQuery(w, r, m, q)
 			// Response is already sent by handleDoNutSentryQuery
 			return

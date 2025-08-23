@@ -2,7 +2,7 @@
  * Type definitions for DoNutSentry client
  */
 
-export type EncodingStrategy = 'simple' | 'base32';
+export type EncodingStrategy = 'simple' | 'base32' | 'session';
 
 export interface DoNutSentryOptions {
   /**

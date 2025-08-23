@@ -1,8 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
+	"crypto/rsa"
 	"encoding/base32"
+	"encoding/base64"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,40 +16,63 @@ import (
 
 // Session storage for DoNutSentry
 type DoNutSession struct {
-	ID        string
-	Chunks    map[int]string
-	CreatedAt time.Time
+	ID           string
+	PublicKey    *rsa.PublicKey
+	Chunks       map[int]string
+	TotalChunks  int
+	CreatedAt    time.Time
+	LastActivity time.Time
 }
 
 var (
 	sessions   = &sync.Map{} // session_id -> *DoNutSession
 	sessionTTL = 5 * time.Minute
+	
+	// Domain configuration for DoNutSentry
+	donutSentryDomain = getDoNutSentryDomain()
 )
+
+func getDoNutSentryDomain() string {
+	// Allow override via environment variable
+	if domain := os.Getenv("DONUTSENTRY_DOMAIN"); domain != "" {
+		// Ensure it starts with a dot and ends with a dot
+		if !strings.HasPrefix(domain, ".") {
+			domain = "." + domain
+		}
+		if !strings.HasSuffix(domain, ".") {
+			domain = domain + "."
+		}
+		return domain
+	}
+	// Default to the original .q.ch.at. domain
+	return ".q.ch.at."
+}
 
 func handleDoNutSentryQuery(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Question) {
 	// Ensure we send the response at the end
 	defer w.WriteMsg(m)
 	
-	// Extract subdomain (everything before .q.ch.at.)
+	// Extract subdomain (everything before the configured domain)
 	fullName := strings.ToLower(q.Name)
-	subdomain := strings.TrimSuffix(fullName, ".q.ch.at.")
+	subdomain := strings.TrimSuffix(fullName, donutSentryDomain)
 	
 	// Debug output to stderr
 	fmt.Println("======= DONUTSENTRY DEBUG =======")
+	fmt.Printf("DoNutSentry domain: %s\n", donutSentryDomain)
 	fmt.Printf("Received query: %s\n", subdomain)
 
 	// Handle different query types
 	if strings.HasSuffix(subdomain, ".init") {
-		// Session initialization - TODO: implement RSA key exchange
-		respondWithTXT(m, q, "SESSION_NOT_IMPLEMENTED")
+		// Session initialization - implement RSA key exchange
+		handleSessionInit(m, q, subdomain)
 		return
 	} else if strings.HasSuffix(subdomain, ".exec") {
-		// Session execution - TODO: implement chunk assembly
-		respondWithTXT(m, q, "SESSION_NOT_IMPLEMENTED")
+		// Session execution - implement chunk assembly
+		handleSessionExec(m, q, subdomain)
 		return
-	} else if strings.Contains(subdomain, ".") {
-		// Might be a session chunk - TODO: implement chunk handling
-		respondWithTXT(m, q, "SESSION_NOT_IMPLEMENTED")
+	} else if countDots(subdomain) >= 2 {
+		// Might be a session chunk - implement chunk handling
+		handleSessionChunk(m, q, subdomain)
 		return
 	}
 
@@ -63,14 +90,22 @@ func handleDoNutSentryQuery(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.
 		fmt.Printf("Using simple encoding: %s -> %s (base32 error: %v)\n", subdomain, prompt, err)
 	}
 
-	// For testing, return a simple response without LLM
-	testResponse := "DoNutSentry v1.0.2: You queried '" + prompt + "' via " + subdomain + ".q.ch.at"
+	// Get LLM response
+	dnsPrompt := "Answer in 2000 characters or less, no markdown formatting: " + prompt
+	response, err := LLM(dnsPrompt, nil)
+	if err != nil {
+		response = "Error: " + err.Error()
+	}
 	
-	// Debug: also log the final response
-	fmt.Printf("Final response: %s\n", testResponse)
+	// Trim to DNS limits (allowing more room with EDNS0)
+	if len(response) > 2000 {
+		response = response[:1997] + "..."
+	}
+	
+	fmt.Printf("LLM response: %s\n", response)
 	fmt.Println("======= END DEBUG =======")
 	
-	respondWithTXT(m, q, testResponse)
+	respondWithTXT(m, q, response)
 }
 
 
@@ -137,4 +172,164 @@ func respondWithTXT(m *dns.Msg, q dns.Question, response string) {
 		Txt: txtStrings,
 	}
 	m.Answer = append(m.Answer, txt)
+}
+
+// Handle session initialization
+func handleSessionInit(m *dns.Msg, q dns.Question, subdomain string) {
+	// Extract public key hash from subdomain
+	// Format: <pubkey_hash>.init.q.ch.at
+	parts := strings.Split(subdomain, ".")
+	if len(parts) < 2 {
+		respondWithTXT(m, q, "ERROR: Invalid init format")
+		return
+	}
+	
+	pubKeyHashEncoded := parts[0]
+	
+	// For v1, we'll generate a simple session ID
+	// In a real implementation, we'd verify the public key and encrypt the session ID
+	sessionID := make([]byte, 16)
+	if _, err := rand.Read(sessionID); err != nil {
+		respondWithTXT(m, q, "ERROR: Failed to generate session ID")
+		return
+	}
+	
+	// Create new session
+	session := &DoNutSession{
+		ID:           base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sessionID),
+		Chunks:       make(map[int]string),
+		CreatedAt:    time.Now(),
+		LastActivity: time.Now(),
+	}
+	
+	// Store session
+	sessions.Store(session.ID, session)
+	
+	// For now, return the session ID directly (in production, encrypt with client's public key)
+	// The client expects base64 encoded encrypted session ID
+	response := base64.StdEncoding.EncodeToString(sessionID)
+	
+	fmt.Printf("Session initialized: %s (pubkey hash: %s)\n", session.ID, pubKeyHashEncoded)
+	respondWithTXT(m, q, response)
+}
+
+// Handle session chunk upload
+func handleSessionChunk(m *dns.Msg, q dns.Question, subdomain string) {
+	// Format: <session_id>.<chunk_num>.<chunk_data>.q.ch.at
+	parts := strings.Split(subdomain, ".")
+	if len(parts) < 3 {
+		respondWithTXT(m, q, "ERROR: Invalid chunk format")
+		return
+	}
+	
+	sessionID := strings.ToUpper(parts[0])
+	chunkNumEncoded := parts[1]
+	chunkDataEncoded := parts[2]
+	
+	// Decode chunk number
+	chunkNumBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(chunkNumEncoded))
+	if err != nil || len(chunkNumBytes) == 0 {
+		respondWithTXT(m, q, "ERROR: Invalid chunk number")
+		return
+	}
+	chunkNum := int(chunkNumBytes[0])
+	
+	// Decode chunk data
+	chunkData, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(chunkDataEncoded))
+	if err != nil {
+		respondWithTXT(m, q, "ERROR: Invalid chunk data")
+		return
+	}
+	
+	// Get session
+	sessionInterface, ok := sessions.Load(sessionID)
+	if !ok {
+		respondWithTXT(m, q, "ERROR: Session not found")
+		return
+	}
+	session := sessionInterface.(*DoNutSession)
+	
+	// Store chunk
+	session.Chunks[chunkNum] = string(chunkData)
+	session.LastActivity = time.Now()
+	
+	fmt.Printf("Received chunk %d for session %s (%d bytes)\n", chunkNum, sessionID, len(chunkData))
+	respondWithTXT(m, q, "ACK")
+}
+
+// Handle session execution
+func handleSessionExec(m *dns.Msg, q dns.Question, subdomain string) {
+	// Format: <session_id>.<total_chunks>.exec.q.ch.at
+	parts := strings.Split(subdomain, ".")
+	if len(parts) < 3 {
+		respondWithTXT(m, q, "ERROR: Invalid exec format")
+		return
+	}
+	
+	sessionID := strings.ToUpper(parts[0])
+	totalChunksEncoded := parts[1]
+	
+	// Decode total chunks
+	totalChunksBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(strings.ToUpper(totalChunksEncoded))
+	if err != nil || len(totalChunksBytes) == 0 {
+		respondWithTXT(m, q, "ERROR: Invalid total chunks")
+		return
+	}
+	totalChunks := int(totalChunksBytes[0])
+	
+	// Get session
+	sessionInterface, ok := sessions.Load(sessionID)
+	if !ok {
+		respondWithTXT(m, q, "ERROR: Session not found")
+		return
+	}
+	session := sessionInterface.(*DoNutSession)
+	
+	// Check if we have all chunks
+	if len(session.Chunks) != totalChunks {
+		respondWithTXT(m, q, fmt.Sprintf("ERROR: Missing chunks (have %d, need %d)", len(session.Chunks), totalChunks))
+		return
+	}
+	
+	// Reassemble the query
+	var reassembled strings.Builder
+	for i := 0; i < totalChunks; i++ {
+		chunk, ok := session.Chunks[i]
+		if !ok {
+			respondWithTXT(m, q, fmt.Sprintf("ERROR: Missing chunk %d", i))
+			return
+		}
+		reassembled.WriteString(chunk)
+	}
+	
+	// Clean up session
+	sessions.Delete(sessionID)
+	
+	query := reassembled.String()
+	fmt.Printf("Executed session %s: reassembled %d chunks into query: %s\n", sessionID, totalChunks, query)
+	
+	// Get LLM response for the reassembled query
+	dnsPrompt := "Answer in 2000 characters or less, no markdown formatting: " + query
+	response, err := LLM(dnsPrompt, nil)
+	if err != nil {
+		response = fmt.Sprintf("Error processing %d chunks: %s", totalChunks, err.Error())
+	}
+	
+	// Trim to DNS limits (allowing more room with EDNS0)
+	if len(response) > 2000 {
+		response = response[:1997] + "..."
+	}
+	
+	respondWithTXT(m, q, response)
+}
+
+// Count dots in a string
+func countDots(s string) int {
+	count := 0
+	for _, c := range s {
+		if c == '.' {
+			count++
+		}
+	}
+	return count
 }
