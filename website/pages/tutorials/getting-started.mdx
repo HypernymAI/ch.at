@@ -1,0 +1,115 @@
+# Getting Started with ch.at
+
+import { Callout, Steps } from 'nextra/components'
+
+Welcome to ch.at! This tutorial will walk you through accessing ch.at for the first time using different methods.
+
+<Callout type="info">
+  **No installation required!** ch.at is a hosted service - you can start using it immediately through any of the methods below.
+</Callout>
+
+## Choose Your Access Method
+
+
+    ### Web Access
+    
+    The simplest way to use ch.at:
+    
+    <Steps>
+    
+    ### Open your browser
+    Navigate to [https://ch.at](https://ch.at)
+    
+    ### Type your question
+    Enter your question in the text box
+    
+    ### Press Enter or click Send
+    Your response will stream in real-time
+    
+    </Steps>
+    
+    **Features:**
+    - No JavaScript required
+    - Dark mode support
+    - Conversation history
+    - Mobile-friendly
+  
+
+---
+
+
+    ### Terminal Access (curl)
+    
+    Perfect for command-line users:
+    
+    ```bash
+    # Basic query
+    curl ch.at/?q=hello
+    
+    # No buffering (smoother streaming)
+    curl -N ch.at/?q=hello
+    
+    # Path-based query (cleaner)
+    curl ch.at/what-is-rust
+    ```
+    
+    **Pro tip:** Add an alias to your shell:
+    ```bash
+    alias chat='curl -N ch.at/'
+    # Usage: chat "your question here"
+    ```
+  
+
+---
+
+
+    ### SSH Access
+    
+    Interactive terminal chat:
+    
+    ```bash
+    ssh ch.at
+    ```
+    
+    **Features:**
+    - Real-time streaming
+    - No authentication needed
+    - Exit with `exit`, Ctrl+C, or Ctrl+D
+    
+    <Callout type="warning">
+      First connection? You'll see a host key warning. Type `yes` to continue.
+    </Callout>
+  
+
+---
+
+
+    ### DNS Queries
+    
+    Query through DNS TXT records:
+    
+    ```bash
+    # Simple query
+    dig @ch.at "what-is-dns" TXT +short
+    
+    # Using your default DNS
+    dig "hello.q.ch.at" TXT +short
+    ```
+    
+    **Limitations:**
+    - Responses limited to ~500 characters
+    - Best for quick answers
+    - Automatically concise responses
+  
+
+## What's Next?
+
+Now that you've accessed ch.at, try:
+
+- [Making your first query](/tutorials/first-query)
+- [Understanding the web interface](/tutorials/web-interface)
+- [Advanced terminal usage](/tutorials/terminal-usage)
+
+<Callout>
+  **Privacy Note:** ch.at doesn't log or track your queries, but they are sent to AI providers (OpenAI, Anthropic, etc.) who may have their own data policies.
+</Callout>

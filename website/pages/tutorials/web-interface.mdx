@@ -1,0 +1,124 @@
+# Using the Web Interface
+
+import { Callout, Steps } from 'nextra/components'
+
+The ch.at web interface provides a clean, JavaScript-free chat experience accessible from any browser.
+
+## Features
+
+- **No JavaScript Required**: Works in all browsers, including text-based ones
+- **Dark Mode**: Automatically follows your system preferences
+- **Conversation History**: Maintains context throughout your session
+- **Streaming Responses**: See responses as they're generated
+- **Mobile Friendly**: Responsive design works on all devices
+
+## Basic Usage
+
+<Steps>
+
+### Navigate to ch.at
+
+Open your browser and go to `https://ch.at`
+
+### Type Your Question
+
+Enter your question in the text input field at the bottom
+
+### Submit Your Query
+
+Press Enter or click the "Send" button
+
+### Read the Response
+
+Your response will stream in real-time below your question
+
+</Steps>
+
+## Interface Elements
+
+### Question Display
+- Your questions appear in gray boxes with italic text
+- Each question is preserved in the conversation history
+
+### Answer Display
+- Responses appear below each question
+- HTML formatting is applied (lists, links, code blocks)
+- Responses stream character by character
+
+### Input Form
+- Text input field for your questions
+- Hidden textarea maintains conversation history
+- Submit button to send queries
+
+## Advanced Features
+
+### Path-Based Queries
+
+Instead of using the form, you can encode queries in the URL:
+
+```
+https://ch.at/what-is-machine-learning
+https://ch.at/explain-docker-containers
+https://ch.at/python-vs-javascript
+```
+
+Hyphens in the URL are converted to spaces.
+
+### Conversation Context
+
+The interface maintains your conversation history:
+- Previous Q&A pairs are visible on the page
+- Context is sent with each new query
+- History is limited to 64KB to ensure compatibility
+- History is stored client-side only (privacy by design)
+
+### Formatting
+
+Responses support HTML formatting:
+- **Bold** and *italic* text
+- Bullet points and numbered lists
+- `Code blocks` and inline code
+- Hyperlinks
+
+<Callout type="info">
+  The web interface specifically requests HTML formatting instead of Markdown for better browser compatibility.
+</Callout>
+
+## Tips and Tricks
+
+1. **New Chat**: Click "New Chat" to start fresh
+2. **Bookmark Queries**: Path-based URLs can be bookmarked
+3. **Copy Responses**: Select and copy text normally
+4. **Print Friendly**: The interface prints cleanly
+
+## Browser Compatibility
+
+Works with:
+- All modern browsers (Chrome, Firefox, Safari, Edge)
+- Text-based browsers (Lynx, w3m)
+- Mobile browsers
+- Browsers with JavaScript disabled
+
+## Privacy Notes
+
+- No cookies are used
+- No tracking or analytics
+- History stored in hidden form field (client-side only)
+- Each page refresh starts a new session
+
+## Troubleshooting
+
+### Response Cut Off
+If responses seem truncated, the 64KB history limit may be reached. Start a new chat.
+
+### Formatting Issues
+If formatting appears broken, your browser may not support certain HTML tags. Try a modern browser.
+
+### Connection Issues
+If responses don't appear, check your internet connection and try refreshing.
+
+## Next Steps
+
+- Learn about [terminal usage](/tutorials/terminal-usage)
+- Explore [SSH chat sessions](/tutorials/ssh-chat)
+- Try [DNS queries](/tutorials/dns-queries)

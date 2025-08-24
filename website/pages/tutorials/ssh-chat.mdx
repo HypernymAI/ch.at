@@ -1,0 +1,240 @@
+# SSH Chat Sessions
+
+import { Callout, Steps } from 'nextra/components'
+
+Connect to ch.at via SSH for an interactive terminal-based chat experience. No authentication required!
+
+## Quick Start
+
+```bash
+ssh ch.at
+```
+
+<Callout type="info">
+  First time connecting? You'll see a host key verification prompt. Type `yes` to continue.
+</Callout>
+
+## Features
+
+- **Anonymous Access**: No username or password needed
+- **Real-time Streaming**: Responses appear as they're generated
+- **Line Editing**: Use backspace to edit your input
+- **Clean Interface**: Minimal, distraction-free chat
+- **Multiple Sessions**: Connect from multiple terminals
+
+## Basic Usage
+
+<Steps>
+
+### Connect via SSH
+
+```bash
+ssh ch.at
+```
+
+### Read the Welcome Message
+
+```
+Welcome to ch.at
+Type your message and press Enter.
+Exit: type 'exit', Ctrl+C, or Ctrl+D
+> 
+```
+
+### Type Your Question
+
+Type your question at the prompt and press Enter
+
+### Read the Response
+
+The response will stream in real-time
+
+### Continue or Exit
+
+- Type another question to continue
+- Type `exit` to disconnect
+- Press `Ctrl+C` or `Ctrl+D` to exit
+
+</Steps>
+
+## Connection Options
+
+### Custom Port
+
+If ch.at runs on a non-standard port:
+
+```bash
+ssh -p 2222 ch.at
+```
+
+### Verbose Mode
+
+Debug connection issues:
+
+```bash
+ssh -v ch.at
+```
+
+### Keep Alive
+
+Prevent timeout on long responses:
+
+```bash
+ssh -o ServerAliveInterval=60 ch.at
+```
+
+## Advanced Features
+
+### Input Editing
+
+- **Backspace**: Delete last character
+- **Ctrl+U**: Clear current line (on most terminals)
+- **Ctrl+C**: Cancel current input and start fresh
+
+### Session Management
+
+Each SSH connection is independent:
+- No shared history between sessions
+- Multiple concurrent sessions supported
+- Rate limiting per IP address
+
+### SSH Config
+
+Add to `~/.ssh/config` for convenience:
+
+```
+Host chat
+    HostName ch.at
+    Port 22
+    ServerAliveInterval 60
+```
+
+Then connect with:
+```bash
+ssh chat
+```
+
+## Integration Examples
+
+### Logging Sessions
+
+Save your chat session:
+
+```bash
+ssh ch.at | tee chat-session-$(date +%Y%m%d-%H%M%S).log
+```
+
+### Scripted Input
+
+Send predefined questions:
+
+```bash
+echo "What is SSH?" | ssh ch.at
+```
+
+Or multiple questions:
+
+```bash
+cat questions.txt | ssh ch.at
+```
+
+### Expect Script
+
+Automate interactions:
+
+```bash
+#!/usr/bin/expect
+spawn ssh ch.at
+expect "> "
+send "What is expect?\r"
+expect "> "
+send "exit\r"
+expect eof
+```
+
+## Security Notes
+
+<Callout type="warning">
+  SSH connections are encrypted, but the ch.at server sees your queries in plain text.
+</Callout>
+
+### Host Key Changes
+
+If you see a host key warning:
+
+```
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+@    WARNING: REMOTE HOST IDENTIFICATION HAS CHANGED!     @
+@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@
+```
+
+This means the server's key has changed. For ch.at, this is expected as the host key is ephemeral.
+
+To connect anyway:
+```bash
+ssh-keygen -R ch.at
+ssh ch.at
+```
+
+### Connection Security
+
+- All traffic is encrypted via SSH
+- No authentication required (anonymous access)
+- Rate limiting prevents abuse
+- No session logs kept on server
+
+## Troubleshooting
+
+### Connection Refused
+
+```bash
+ssh: connect to host ch.at port 22: Connection refused
+```
+
+**Solutions**:
+- Check if you're behind a firewall blocking port 22
+- Try connecting to a different port if configured
+- Verify the server is running
+
+### Connection Timeout
+
+```bash
+ssh: connect to host ch.at port 22: Operation timed out
+```
+
+**Solutions**:
+- Check your internet connection
+- Try using a VPN if SSH is blocked
+- Use verbose mode to debug: `ssh -v ch.at`
+
+### Broken Pipe
+
+```
+client_loop: send disconnect: Broken pipe
+```
+
+**Solutions**:
+- Add `ServerAliveInterval` to keep connection alive
+- Check for network interruptions
+- Reconnect and continue
+
+## Use Cases
+
+1. **Quick Queries**: Fast access without opening a browser
+2. **Remote Access**: Use from servers without GUI
+3. **Automation**: Script interactions with expect
+4. **Privacy**: Encrypted connection for sensitive queries
+5. **Simplicity**: No software installation required
+
+## Limitations
+
+- No persistent history between sessions
+- Text-only responses (no images or rich formatting)
+- Single-line input (no multi-line queries)
+- Connection may timeout on very long responses
+
+## Next Steps
+
+- Learn about [DNS queries](/tutorials/dns-queries)
+- Explore the [API](/tutorials/api-basics)
+- Try [terminal usage with curl](/tutorials/terminal-usage)

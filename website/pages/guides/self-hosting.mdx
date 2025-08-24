@@ -1,0 +1,136 @@
+# Self-Hosting ch.at
+
+import { Callout, Steps, FileTree } from 'nextra/components'
+
+This guide walks you through setting up your own ch.at instance.
+
+<Callout type="warning">
+  **Prerequisites:**
+  - Go 1.19 or higher
+  - Root access or CAP_NET_BIND_SERVICE capability
+  - SSL certificates (for HTTPS)
+  - API key for your chosen LLM provider
+</Callout>
+
+## Quick Setup
+
+<Steps>
+
+### Clone the repository
+
+```bash
+git clone https://github.com/yourusername/ch.at
+cd ch.at
+```
+
+### Configure environment variables
+
+```bash
+export API_KEY="your-api-key-here"
+export API_URL="https://api.openai.com/v1/chat/completions"
+export MODEL_NAME="gpt-4"
+```
+
+### Configure ports (optional)
+
+Edit `chat.go` to change default ports:
+
+```go filename="chat.go" {3-6}
+const (
+    HTTP_PORT  = 8080  // Instead of 80
+    HTTPS_PORT = 0     // Disabled
+    SSH_PORT   = 2222  // Instead of 22
+    DNS_PORT   = 5354  // Instead of 53
+)
+```
+
+### Build the binary
+
+```bash
+go build -o chat .
+```
+
+### Run ch.at
+
+For high ports (no sudo):
+```bash
+./chat
+```
+
+For standard ports (requires sudo):
+```bash
+sudo ./chat
+```
+
+</Steps>
+
+## Production Deployment
+
+### File Structure
+
+<FileTree>
+  <FileTree.Folder name="/opt/chat" defaultOpen>
+    <FileTree.File name="ch.at" />
+    <FileTree.File name="cert.pem" />
+    <FileTree.File name="key.pem" />
+    <FileTree.File name=".env" />
+  </FileTree.Folder>
+</FileTree>
+
+### Environment Variables
+
+Create a `.env` file:
+
+```bash filename=".env"
+API_KEY=sk-...
+API_URL=https://api.openai.com/v1/chat/completions
+MODEL_NAME=gpt-4
+DONUTSENTRY_DOMAIN=q.yourdomain.com
+```
+
+### SSL Certificates
+
+<Callout type="info">
+  For production, use Let's Encrypt certificates. For testing, self-signed certificates work.
+</Callout>
+
+#### Let's Encrypt (Recommended)
+
+```bash
+certbot certonly --standalone -d yourdomain.com
+cp /etc/letsencrypt/live/yourdomain.com/fullchain.pem cert.pem
+cp /etc/letsencrypt/live/yourdomain.com/privkey.pem key.pem
+```
+
+#### Self-Signed (Testing)
+
+```bash
+openssl req -x509 -newkey rsa:4096 \
+  -keyout key.pem -out cert.pem \
+  -days 365 -nodes
+```
+
+## Verification
+
+Test each protocol:
+
+```bash
+# HTTP
+curl http://localhost:8080/?q=test
+
+# SSH
+ssh -p 2222 localhost
+
+# DNS
+dig @localhost -p 5354 test.q.ch.at TXT
+
+# API
+curl localhost:8080/v1/chat/completions \
+  -d '{"messages":[{"role":"user","content":"test"}]}'
+```
+
+## Next Steps
+
+- [Set up systemd service](/guides/systemd-setup)
+- [Configure rate limiting](/guides/rate-limiting)
+- [Enable DoNutSentry](/guides/donutsentry)

@@ -1,0 +1,38 @@
+{
+  "passed": [
+    "First Query Tutorial",
+    "Web Interface Tutorial",
+    "Terminal Usage Tutorial",
+    "SSH Chat Tutorial",
+    "DNS Queries Tutorial",
+    "API Basics Tutorial",
+    "Self-hosting Guide",
+    "Docker Guide",
+    "Systemd Guide",
+    "SSL Guide",
+    "Rate Limiting Guide",
+    "Custom Models Guide",
+    "API Integration Guide",
+    "Contributing Guide",
+    "DoNutSentry Guide",
+    "Architecture",
+    "Protocols",
+    "Privacy Model",
+    "Design Philosophy",
+    "DoNutSentry Theory",
+    "API Reference",
+    "CLI Tools",
+    "Configuration",
+    "Environment Variables",
+    "Error Codes",
+    "Ports Reference"
+  ],
+  "failed": [
+    "Homepage",
+    "Getting Started Tutorial"
+  ],
+  "errors": {
+    "Homepage": "Console errors: Failed to load resource: the server responded with a status of 404 (Not Found), Failed to load resource: the server responded with a status of 404 (Not Found)",
+    "Getting Started Tutorial": "net::ERR_ABORTED at http://localhost:3002/tutorials/getting-started"
+  }
+}

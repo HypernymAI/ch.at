@@ -1,0 +1,252 @@
+# Terminal Usage
+
+import { Callout } from 'nextra/components'
+
+Access ch.at directly from your terminal using curl or any HTTP client. Perfect for scripting, automation, and command-line workflows.
+
+## Basic Commands
+
+### Simple Query
+
+```bash
+# Basic query with URL encoding
+curl ch.at/?q=hello
+
+# With no buffering for smoother streaming
+curl -N ch.at/?q=hello
+
+# Path-based query (cleaner syntax)
+curl ch.at/what-is-rust
+```
+
+### Different Response Formats
+
+
+    ```bash
+    # Default plain text response
+    curl ch.at/?q="What is Docker?"
+    
+    # Or with path syntax
+    curl ch.at/what-is-docker
+    ```
+  
+
+---
+
+
+    ```bash
+    # JSON response
+    curl -H "Accept: application/json" \
+      ch.at/?q="What is Docker?"
+    ```
+    
+    Response format:
+    ```json
+    {
+      "question": "What is Docker?",
+      "answer": "Docker is a platform..."
+    }
+    ```
+  
+
+---
+
+
+    ```bash
+    # Server-sent events stream
+    curl -H "Accept: text/event-stream" \
+      ch.at/?q="What is Docker?"
+    ```
+    
+    Response format:
+    ```
+    data: Docker is
+    data:  a platform
+    data:  for...
+    data: [DONE]
+    ```
+  
+
+## Advanced Usage
+
+### POST Requests
+
+Send queries via POST:
+
+```bash
+# Form data
+curl -X POST ch.at \
+  -d "q=Explain containerization"
+
+# Raw body
+curl -X POST ch.at \
+  -d "Explain containerization"
+
+# With conversation history
+curl -X POST ch.at \
+  -d "q=What about Kubernetes?" \
+  -d "h=Q: What is Docker?\nA: Docker is..."
+```
+
+### Streaming Control
+
+Control response streaming:
+
+```bash
+# No buffering (smoother real-time streaming)
+curl -N ch.at/?q=hello
+
+# With progress bar
+curl --progress-bar ch.at/?q=hello > response.txt
+
+# Silent mode (only show response)
+curl -s ch.at/?q=hello
+```
+
+### Shell Integration
+
+Create useful aliases and functions:
+
+```bash
+# Add to ~/.bashrc or ~/.zshrc
+
+# Simple chat alias
+alias chat='curl -s -N ch.at/'
+
+# Function with better formatting
+chat() {
+  echo "Q: $*"
+  echo "A: $(curl -s "ch.at/?q=$*")"
+}
+
+# Function that saves history
+chatlog() {
+  local query="$*"
+  local response=$(curl -s "ch.at/?q=$query")
+  echo "Q: $query" >> ~/chat.log
+  echo "A: $response" >> ~/chat.log
+  echo "$response"
+}
+```
+
+## Scripting Examples
+
+### Batch Processing
+
+Process multiple queries:
+
+```bash
+#!/bin/bash
+# questions.sh
+
+questions=(
+  "What is Git?"
+  "What is GitHub?"
+  "What is the difference?"
+)
+
+for q in "${questions[@]}"; do
+  echo "Q: $q"
+  curl -s "ch.at/?q=$q"
+  echo -e "\n---\n"
+done
+```
+
+### Error Handling
+
+Handle connection errors gracefully:
+
+```bash
+#!/bin/bash
+
+query_chat() {
+  local response
+  response=$(curl -s --fail "ch.at/?q=$1" 2>/dev/null)
+  
+  if [ $? -eq 0 ]; then
+    echo "$response"
+  else
+    echo "Error: Failed to connect to ch.at" >&2
+    return 1
+  fi
+}
+```
+
+### JSON Processing
+
+Parse JSON responses with jq:
+
+```bash
+# Get just the answer
+curl -s -H "Accept: application/json" \
+  ch.at/?q="What is AI?" | jq -r '.answer'
+
+# Pretty print JSON
+curl -s -H "Accept: application/json" \
+  ch.at/?q="What is AI?" | jq '.'
+```
+
+## Tips and Tricks
+
+### URL Encoding
+
+<Callout type="warning">
+  Special characters in queries should be URL encoded
+</Callout>
+
+```bash
+# Spaces can use + or %20
+curl ch.at/?q=hello+world
+curl ch.at/?q=hello%20world
+
+# Or use --data-urlencode
+curl -G ch.at --data-urlencode "q=What's new?"
+
+# Or use path format (auto-encodes)
+curl ch.at/whats-new
+```
+
+### Timeouts
+
+Set appropriate timeouts for long responses:
+
+```bash
+# 30 second timeout
+curl --max-time 30 ch.at/?q="Explain quantum computing"
+
+# Connect timeout
+curl --connect-timeout 5 ch.at/?q=hello
+```
+
+### Save Responses
+
+```bash
+# Save to file
+curl ch.at/?q="Python tutorial" > python-tutorial.txt
+
+# Append to file
+curl ch.at/?q="Python examples" >> python-tutorial.txt
+
+# Save with timestamp
+curl ch.at/?q="Daily update" > "update-$(date +%Y%m%d).txt"
+```
+
+## Automation Ideas
+
+1. **Daily Questions**: Cron job to ask daily questions
+2. **Git Hooks**: Ask for commit message suggestions
+3. **Error Lookup**: Pipe error messages to ch.at
+4. **Documentation**: Generate docs from code comments
+5. **Learning**: Random programming questions
+
+Example cron job:
+```bash
+# Daily programming tip at 9 AM
+0 9 * * * curl -s ch.at/give-me-a-programming-tip >> ~/daily-tips.txt
+```
+
+## Next Steps
+
+- Explore [SSH chat sessions](/tutorials/ssh-chat)
+- Learn about [DNS queries](/tutorials/dns-queries)
+- Master the [API](/tutorials/api-basics)

@@ -1,0 +1,32 @@
+{
+  "name": "chat-docs",
+  "version": "1.0.0",
+  "description": "Documentation for ch.at - Universal Basic Intelligence",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint"
+  },
+  "keywords": [
+    "documentation",
+    "ai",
+    "chat",
+    "dns",
+    "ssh"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "next": "^14.2.32",
+    "nextra": "^3.3.1",
+    "nextra-theme-docs": "^3.3.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/node": "24.3.0",
+    "@types/react": "^19.1.11",
+    "puppeteer": "^24.17.0"
+  }
+}

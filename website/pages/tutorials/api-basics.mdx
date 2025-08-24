@@ -1,0 +1,335 @@
+# API Basics
+
+import { Callout } from 'nextra/components'
+
+ch.at provides an OpenAI-compatible REST API at `/v1/chat/completions`. Use it to integrate AI capabilities into your applications.
+
+## Quick Start
+
+```bash
+curl ch.at/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "Hello, world!"}
+    ]
+  }'
+```
+
+<Callout type="info">
+  The API is compatible with OpenAI's Chat Completions format, making it easy to switch between providers.
+</Callout>
+
+## Request Format
+
+### Required Fields
+
+```json
+{
+  "messages": [
+    {
+      "role": "user",
+      "content": "Your question here"
+    }
+  ]
+}
+```
+
+### Optional Fields
+
+```json
+{
+  "model": "gpt-3.5-turbo",      // Model name (informational)
+  "messages": [...],             // Message array
+  "stream": false,               // Enable streaming (default: false)
+  "temperature": 0.7,            // Randomness (0-2)
+  "max_tokens": 500              // Response length limit
+}
+```
+
+## Response Formats
+
+
+    ### Standard Response
+    
+    ```json
+    {
+      "id": "chatcmpl-1234567890",
+      "object": "chat.completion",
+      "created": 1234567890,
+      "model": "gpt-3.5-turbo",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "Hello! How can I help you today?"
+          }
+        }
+      ]
+    }
+    ```
+  
+
+---
+
+
+    ### Streaming Response
+    
+    Enable with `"stream": true`:
+    
+    ```
+    data: {"id":"chatcmpl-...","choices":[{"index":0,"delta":{"content":"Hello"}}]}
+    data: {"id":"chatcmpl-...","choices":[{"index":0,"delta":{"content":" there"}}]}
+    data: {"id":"chatcmpl-...","choices":[{"index":0,"delta":{"content":"!"}}]}
+    data: [DONE]
+    ```
+    
+    Each line is a Server-Sent Event with a JSON chunk.
+  
+
+## Examples
+
+### Basic Chat
+
+```bash
+curl ch.at/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "What is the capital of France?"}
+    ]
+  }' | jq -r '.choices[0].message.content'
+```
+
+### Multi-turn Conversation
+
+```bash
+curl ch.at/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [
+      {"role": "user", "content": "What is Python?"},
+      {"role": "assistant", "content": "Python is a high-level programming language..."},
+      {"role": "user", "content": "What are its main uses?"}
+    ]
+  }'
+```
+
+### Streaming Response
+
+```bash
+curl ch.at/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "messages": [{"role": "user", "content": "Tell me a story"}],
+    "stream": true
+  }'
+```
+
+## Client Libraries
+
+### Python
+
+```python
+import requests
+import json
+
+def chat(message):
+    response = requests.post(
+        "https://ch.at/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": message}]
+        }
+    )
+    return response.json()["choices"][0]["message"]["content"]
+
+# Usage
+answer = chat("What is machine learning?")
+print(answer)
+```
+
+### JavaScript/Node.js
+
+```javascript
+async function chat(message) {
+  const response = await fetch('https://ch.at/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: [{ role: 'user', content: message }]
+    })
+  });
+  
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
+
+// Usage
+const answer = await chat('What is machine learning?');
+console.log(answer);
+```
+
+### Streaming in Python
+
+```python
+import requests
+import json
+
+def stream_chat(message):
+    response = requests.post(
+        "https://ch.at/v1/chat/completions",
+        json={
+            "messages": [{"role": "user", "content": message}],
+            "stream": True
+        },
+        stream=True
+    )
+    
+    for line in response.iter_lines():
+        if line and line.startswith(b'data: '):
+            data = line[6:]  # Remove 'data: ' prefix
+            if data == b'[DONE]':
+                break
+            chunk = json.loads(data)
+            content = chunk['choices'][0]['delta'].get('content', '')
+            print(content, end='', flush=True)
+
+# Usage
+stream_chat("Tell me about AI")
+```
+
+## OpenAI SDK Compatibility
+
+Use the official OpenAI SDK with ch.at:
+
+```python
+from openai import OpenAI
+
+client = OpenAI(
+    base_url="https://ch.at/v1",
+    api_key="not-needed"  # ch.at doesn't require auth
+)
+
+response = client.chat.completions.create(
+    model="gpt-3.5-turbo",
+    messages=[
+        {"role": "user", "content": "Hello!"}
+    ]
+)
+
+print(response.choices[0].message.content)
+```
+
+## Error Handling
+
+### Rate Limiting
+
+```json
+{
+  "error": {
+    "message": "Rate limit exceeded",
+    "type": "rate_limit_error",
+    "code": 429
+  }
+}
+```
+
+### Invalid Request
+
+```json
+{
+  "error": {
+    "message": "Invalid JSON",
+    "type": "invalid_request_error",
+    "code": 400
+  }
+}
+```
+
+### Server Error
+
+```json
+{
+  "error": {
+    "message": "Internal server error",
+    "type": "server_error",
+    "code": 500
+  }
+}
+```
+
+## Best Practices
+
+1. **Handle Errors**: Always check response status
+2. **Timeout**: Set reasonable timeouts (30s recommended)
+3. **Retry Logic**: Implement exponential backoff
+4. **Streaming**: Use for long responses
+5. **Rate Limits**: Respect 429 responses
+
+### Example with Error Handling
+
+```python
+import requests
+from time import sleep
+
+def safe_chat(message, retries=3):
+    for attempt in range(retries):
+        try:
+            response = requests.post(
+                "https://ch.at/v1/chat/completions",
+                json={"messages": [{"role": "user", "content": message}]},
+                timeout=30
+            )
+            
+            if response.status_code == 429:
+                sleep(2 ** attempt)  # Exponential backoff
+                continue
+                
+            response.raise_for_status()
+            return response.json()["choices"][0]["message"]["content"]
+            
+        except requests.exceptions.RequestException as e:
+            if attempt == retries - 1:
+                raise
+            sleep(1)
+    
+    return None
+```
+
+## CORS Support
+
+The API includes CORS headers:
+
+```
+Access-Control-Allow-Origin: *
+Access-Control-Allow-Methods: POST, OPTIONS
+Access-Control-Allow-Headers: Content-Type, Authorization
+```
+
+This allows browser-based applications to use the API directly.
+
+## Rate Limiting
+
+- **Limit**: 100 requests per minute per IP
+- **Burst**: 10 requests
+- **Response**: HTTP 429 when exceeded
+- **Retry-After**: Not provided (use exponential backoff)
+
+## API vs Other Methods
+
+| Feature | API | Web | SSH | DNS |
+|---------|-----|-----|-----|-----|
+| Response Length | Unlimited* | Unlimited* | Unlimited* | ~500 chars |
+| Streaming | ✓ | ✓ | ✓ | ✗ |
+| Authentication | ✗ | ✗ | ✗ | ✗ |
+| Conversation Context | Manual | Automatic | ✗ | ✗ |
+| Structured Data | JSON | HTML | Plain text | Plain text |
+
+*Limited by model token limits
+
+## Next Steps
+
+- Build a [chatbot integration](/guides/api-integration)
+- Explore [DoNutSentry](/guides/donutsentry) for DNS-based queries
+- Review the [full API reference](/reference/api)

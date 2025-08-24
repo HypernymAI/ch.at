@@ -1,0 +1,283 @@
+# DNS Queries
+
+import { Callout } from 'nextra/components'
+
+Query ch.at through DNS TXT records - a unique way to access AI from any system that can perform DNS lookups.
+
+<Callout type="warning">
+  DNS responses are limited to ~500 characters. For longer responses, use HTTP, SSH, or the API.
+</Callout>
+
+## Basic Usage
+
+### Simple Query
+
+```bash
+dig @ch.at "what-is-dns" TXT +short
+```
+
+Response:
+```
+"DNS (Domain Name System) is a hierarchical system that translates human-readable domain names like 'google.com' into IP addresses like '142.250.185.78' that computers use to connect to each other on the internet."
+```
+
+### Using Default DNS
+
+Query through the DoNutSentry domain:
+
+```bash
+dig "hello.q.ch.at" TXT +short
+```
+
+## Query Formats
+
+
+    ### Simple Format
+    
+    For basic alphanumeric queries:
+    
+    ```bash
+    # Direct to ch.at DNS server
+    dig @ch.at "what-is-ai" TXT +short
+    
+    # Spaces become hyphens
+    dig @ch.at "how-does-tcp-work" TXT +short
+    ```
+    
+    **Limitations**:
+    - Alphanumeric characters only
+    - Spaces replaced with hyphens
+    - No special characters
+  
+
+---
+
+
+    ### Base32 Format
+    
+    For queries with special characters:
+    
+    ```bash
+    # Encode your query to base32
+    echo -n "What's new?" | base32 | tr -d '='
+    # Output: KZSXE6JANFWXA33SMQQFI===
+    
+    # Query with base32
+    dig @ch.at "KZSXE6JANFWXA33SMQQFI.q.ch.at" TXT +short
+    ```
+    
+    **When to use**:
+    - Queries with punctuation
+    - Non-ASCII characters
+    - Complex queries
+  
+
+---
+
+
+    ### DoNutSentry Protocol
+    
+    For large queries using sessions:
+    
+    ```bash
+    # Initialize session
+    dig "init.q.ch.at" TXT +short
+    
+    # Send chunks (advanced - see DoNutSentry guide)
+    dig "<session>.<chunk>.q.ch.at" TXT +short
+    
+    # Execute query
+    dig "<session>.exec.q.ch.at" TXT +short
+    ```
+    
+    See [DoNutSentry Protocol](/guides/donutsentry) for details.
+  
+
+## DNS Tools Examples
+
+### Using dig
+
+```bash
+# Basic query
+dig @ch.at "what-is-dns" TXT +short
+
+# Verbose output
+dig @ch.at "what-is-dns" TXT
+
+# Specify timeout
+dig @ch.at "what-is-dns" TXT +time=5
+
+# Use TCP instead of UDP
+dig @ch.at "what-is-dns" TXT +tcp
+```
+
+### Using nslookup
+
+```bash
+# Windows/cross-platform
+nslookup -type=TXT what-is-dns.q.ch.at ch.at
+```
+
+### Using host
+
+```bash
+# Linux/Unix
+host -t TXT what-is-dns.q.ch.at ch.at
+```
+
+### Using drill
+
+```bash
+# Modern alternative to dig
+drill @ch.at what-is-dns TXT
+```
+
+## Response Handling
+
+### Parse Multiple TXT Records
+
+DNS TXT records are split at 255 bytes:
+
+```bash
+# Get raw response with quotes
+dig @ch.at "explain-tcp" TXT +short
+
+# Remove quotes and join
+dig @ch.at "explain-tcp" TXT +short | sed 's/"//g' | tr -d '\n'
+```
+
+### Script Example
+
+```bash
+#!/bin/bash
+# dns-chat.sh
+
+query_dns() {
+  local query=$(echo "$1" | tr ' ' '-')
+  dig @ch.at "$query" TXT +short | sed 's/"//g' | tr -d '\n'
+}
+
+# Usage
+response=$(query_dns "what is kubernetes")
+echo "$response"
+```
+
+## Advanced Usage
+
+### Custom DNS Server Port
+
+If ch.at runs DNS on a non-standard port:
+
+```bash
+dig @ch.at -p 5354 "hello" TXT +short
+```
+
+### Batch Queries
+
+Query multiple questions:
+
+```bash
+#!/bin/bash
+questions=("what-is-git" "what-is-github" "git-vs-github")
+
+for q in "${questions[@]}"; do
+  echo "Q: $q"
+  dig @ch.at "$q" TXT +short | sed 's/"//g'
+  echo
+done
+```
+
+### DNS over HTTPS (DoH)
+
+If supported by your resolver:
+
+```bash
+# Using curl with Cloudflare DoH
+curl -s "https://cloudflare-dns.com/dns-query?name=hello.q.ch.at&type=TXT" \
+  -H "Accept: application/dns-json" | jq -r '.Answer[].data'
+```
+
+## Limitations
+
+<Callout type="error">
+  **Important DNS Limitations**:
+  - Response limited to ~500 characters
+  - 4-second timeout for complex queries
+  - No conversation context
+  - Plain text only (no formatting)
+</Callout>
+
+### Character Limits
+
+- DNS label: 63 characters max
+- Full domain: 255 characters max
+- TXT record: 255 bytes per string
+- Total response: ~500 characters practical limit
+
+### Query Encoding
+
+Constraints for simple queries:
+- Use only: a-z, 0-9, hyphens
+- No spaces (convert to hyphens)
+- No special characters
+- Case-insensitive
+
+## Use Cases
+
+DNS queries are perfect for:
+
+1. **Restricted Networks**: Where only DNS is allowed
+2. **Quick Lookups**: Definition or fact checking
+3. **Monitoring**: Health checks via DNS
+4. **IoT Devices**: Minimal network requirements
+5. **Scripting**: Simple integration
+
+Not suitable for:
+- Long explanations
+- Code examples
+- Conversational context
+- Formatted responses
+
+## Troubleshooting
+
+### No Response
+
+```bash
+# Check connectivity
+dig @ch.at test TXT
+
+# Try with TCP
+dig @ch.at test TXT +tcp
+
+# Increase timeout
+dig @ch.at test TXT +time=10
+```
+
+### Truncated Response
+
+If you see `;; TRUNCATED`:
+
+```bash
+# Use TCP for larger responses
+dig @ch.at "your-query" TXT +tcp
+```
+
+### SERVFAIL Errors
+
+Usually means the query took too long:
+- Simplify your question
+- Ask for shorter responses
+- Use HTTP/SSH for complex queries
+
+## Tips for DNS Queries
+
+1. **Be Concise**: Ask for "definition of X" not "explain X in detail"
+2. **Avoid Context**: Each query is independent
+3. **Simple Words**: Use common terms, avoid jargon
+4. **Test First**: Try "test" or "hello" to verify connectivity
+
+## Next Steps
+
+- Learn the [API basics](/tutorials/api-basics)
+- Explore [DoNutSentry](/guides/donutsentry) for large queries
+- Use [terminal commands](/tutorials/terminal-usage) for full responses

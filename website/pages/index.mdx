@@ -1,0 +1,59 @@
+# Welcome to ch.at
+
+ch.at (pronounced "ch-dot-at") is a universal AI chat service that provides access to Large Language Models through multiple network protocols. Built with simplicity and accessibility in mind, it's a single Go binary that serves AI responses via HTTP, HTTPS, SSH, DNS, and OpenAI-compatible API.
+
+## Quick Start
+
+### 🌐 Web Browser
+```bash
+open https://ch.at
+```
+
+### 💻 Terminal
+```bash
+curl ch.at/?q=hello
+```
+
+### 🔐 SSH
+```bash
+ssh ch.at
+```
+
+### 🔍 DNS
+```bash
+dig @ch.at "what-is-2+2" TXT
+```
+
+## Key Features
+
+- 🌐 **Multi-protocol access**: HTTP/HTTPS, SSH, DNS, OpenAI API
+- 🔒 **Privacy-focused**: No logs, no tracking, no user accounts
+- 📦 **Single binary**: ~1,300 lines of Go, minimal dependencies
+- 🍩 **DoNutSentry**: Advanced DNS tunneling for AI queries
+- ⚡ **Streaming support**: Real-time responses across all protocols
+- 🌙 **No JavaScript required**: Web interface works everywhere
+
+## Documentation Structure
+
+This documentation follows the [Diátaxis framework](https://diataxis.fr/):
+
+- **[Tutorials](/tutorials)**: Learn by doing - step-by-step guides to get started
+- **[How-to Guides](/guides)**: Achieve specific goals - recipes for common tasks
+- **[Explanations](/explanations)**: Understand the concepts - theory and background
+- **[Reference](/reference)**: Technical information - APIs and configurations
+
+## Getting Help
+
+import { Callout } from 'nextra/components'
+
+<Callout type="info">
+  Need help? Join our community discussions on [GitHub](https://github.com/yourusername/ch.at/discussions) or report issues at our [issue tracker](https://github.com/yourusername/ch.at/issues).
+</Callout>
+
+## Contributing
+
+ch.at is open source and welcomes contributions! See our [Contributing Guide](/guides/contributing) to get started.
+
+## License
+
+MIT License - see [LICENSE](https://github.com/yourusername/ch.at/blob/main/LICENSE) file.

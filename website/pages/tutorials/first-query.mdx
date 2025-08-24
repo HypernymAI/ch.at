@@ -1,0 +1,110 @@
+# Your First Query
+
+import { Callout } from 'nextra/components'
+
+Now that you've accessed ch.at, let's make your first query and understand how responses work.
+
+## Making a Query
+
+
+    ### Via Web Interface
+    
+    1. Go to [https://ch.at](https://ch.at)
+    2. Type: "What is artificial intelligence?"
+    3. Press Enter or click Send
+    
+    You'll see:
+    - Your question appears in a gray box
+    - The response streams in real-time below
+    - History is preserved for the session
+  
+
+---
+
+
+    ### Via Terminal
+    
+    ```bash
+    curl -N ch.at/?q="What is artificial intelligence?"
+    ```
+    
+    Or using the path format:
+    ```bash
+    curl ch.at/what-is-artificial-intelligence
+    ```
+    
+    <Callout>
+      The `-N` flag disables buffering for smoother streaming.
+    </Callout>
+  
+
+---
+
+
+    ### Via API
+    
+    ```bash
+    curl ch.at/v1/chat/completions \
+      -H "Content-Type: application/json" \
+      -d '{
+        "messages": [{
+          "role": "user",
+          "content": "What is artificial intelligence?"
+        }]
+      }'
+    ```
+  
+
+## Understanding Responses
+
+### Response Format
+
+Responses are:
+- **Streamed**: Characters appear as they're generated
+- **Markdown-formatted**: Links, code blocks, lists are supported
+- **Context-aware**: Follow-up questions remember previous context
+
+### Response Limits
+
+Different protocols have different limits:
+
+| Protocol | Response Limit | Notes |
+|----------|---------------|-------|
+| HTTP/API | Unlimited* | Streams until complete |
+| SSH | Unlimited* | Real-time streaming |
+| DNS | ~500 chars | Automatically concise |
+
+<Callout type="info">
+  *Limited by the AI model's token limits, typically 4,096 tokens
+</Callout>
+
+## Common First Queries
+
+Try these to get started:
+
+```bash
+# General knowledge
+curl ch.at/explain-quantum-computing-simply
+
+# Programming help
+curl ch.at/python-vs-javascript-comparison
+
+# Creative tasks
+curl ch.at/write-a-haiku-about-coding
+
+# Technical questions
+curl ch.at/how-does-https-work
+```
+
+## Tips for Better Responses
+
+1. **Be specific**: "Explain REST APIs" → "Explain REST APIs with examples"
+2. **Set context**: "In Python, how do I..." vs just "How do I..."
+3. **Request format**: "List 5 benefits of..." for structured responses
+4. **Follow up**: The web interface maintains context for conversations
+
+## Next Steps
+
+- [Learn about the web interface](/tutorials/web-interface)
+- [Master terminal usage](/tutorials/terminal-usage)
+- [Explore advanced features](/guides/donutsentry)
