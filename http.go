@@ -6,6 +6,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
@@ -59,6 +60,7 @@ const htmlFooterTemplate = `</div>
 func StartHTTPServer(port int) error {
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/v1/chat/completions", handleChatCompletions)
+	http.HandleFunc("/health", handleHealth)
 
 	addr := fmt.Sprintf(":%d", port)
 	return http.ListenAndServe(addr, nil)
@@ -420,4 +422,50 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chatResp)
 	}
+}
+
+// handleHealth provides a health check endpoint
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	health := map[string]interface{}{
+		"status": "healthy",
+		"services": map[string]bool{
+			"http":  HTTP_PORT > 0,
+			"https": HTTPS_PORT > 0,
+			"ssh":   SSH_PORT > 0,
+			"dns":   DNS_PORT > 0,
+		},
+		"ports": map[string]int{
+			"http":  HTTP_PORT,
+			"https": HTTPS_PORT,
+			"ssh":   SSH_PORT,
+			"dns":   DNS_PORT,
+		},
+		"mode": "production",
+	}
+	
+	if os.Getenv("HIGH_PORT_MODE") == "true" {
+		health["mode"] = "development"
+	}
+	
+	// Check if LLM is configured
+	if apiKey != "" && apiURL != "" && modelName != "" {
+		health["llm_configured"] = true
+		health["llm_model"] = modelName
+	} else {
+		health["llm_configured"] = false
+	}
+	
+	// Check SSL certificates for HTTPS
+	if HTTPS_PORT > 0 {
+		_, _, found := findSSLCertificates()
+		health["ssl_certificates"] = found
+	}
+	
+	// Check DoNutSentry configuration
+	if donutSentryDomain != "" {
+		health["donutsentry_domain"] = donutSentryDomain
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(health)
 }

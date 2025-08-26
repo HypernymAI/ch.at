@@ -38,6 +38,13 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			continue
 		}
 
+		// Check for DoNutSentry queries based on configured domain
+		if strings.HasSuffix(q.Name, donutSentryDomain) {
+			handleDoNutSentryQuery(w, r, m, q)
+			// Response is already sent by handleDoNutSentryQuery
+			return
+		}
+
 		name := strings.TrimSuffix(strings.TrimSuffix(q.Name, "."), ".ch.at")
 		prompt := strings.ReplaceAll(name, "-", " ")
 

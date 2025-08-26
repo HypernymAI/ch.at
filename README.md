@@ -89,23 +89,25 @@ curl localhost/?q=hello
 
 ### High Port Configuration
 
-To run without sudo, edit the constants in `chat.go`:
+For development or non-privileged operation, use the HIGH_PORT_MODE environment variable:
 
-```go
-const (
-    HTTP_PORT   = 8080  // Instead of 80
-    HTTPS_PORT  = 0     // Disabled
-    SSH_PORT    = 2222  // Instead of 22
-    DNS_PORT    = 0     // Disabled
-)
+```bash
+# Run on high ports (no sudo required)
+HIGH_PORT_MODE=true ./chat
+
+# This sets:
+# HTTP:  8080 (instead of 80)
+# HTTPS: 8443 (instead of 443)
+# SSH:   2222 (instead of 22)
+# DNS:   8053 (instead of 53)
 ```
 
-Then build:
+Test the service:
 ```bash
-go build -o chat .
-./chat  # No sudo needed for high ports
+# Check health status
+curl http://localhost:8080/health
 
-# Test the service
+# Test chat functionality
 ./selftest http://localhost:8080
 ```
 

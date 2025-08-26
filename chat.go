@@ -1,13 +1,11 @@
 package main
 
-// Configuration - edit source code and recompile to change settings
-// To disable a service: set its port to 0 or delete its .go file
-const (
-	HTTP_PORT  = 80  // Web interface (set to 0 to disable)
-	HTTPS_PORT = 443 // TLS web interface (set to 0 to disable)
-	SSH_PORT   = 22  // Anonymous SSH chat (set to 0 to disable)
-	DNS_PORT   = 53  // DNS TXT chat (set to 0 to disable)
+import (
+	"log"
 )
+
+// Note: Port configuration has moved to config.go
+// Use HIGH_PORT_MODE=true environment variable for development
 
 func main() {
 	// SSH Server
@@ -29,7 +27,14 @@ func main() {
 	if HTTP_PORT > 0 || HTTPS_PORT > 0 {
 		if HTTPS_PORT > 0 {
 			go func() {
-				StartHTTPSServer(HTTPS_PORT, "cert.pem", "key.pem")
+				certPath, keyPath, found := findSSLCertificates()
+				if !found {
+					log.Printf("WARNING: SSL certificates not found, HTTPS disabled")
+					log.Printf("Expected cert.pem and key.pem in working directory")
+					log.Printf("Or valid Let's Encrypt certificates")
+					return
+				}
+				StartHTTPSServer(HTTPS_PORT, certPath, keyPath)
 			}()
 		}
 
