@@ -92,20 +92,23 @@ func handleDoNutSentryQuery(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.
 
 	// Get LLM response
 	dnsPrompt := "Answer in 2000 characters or less, no markdown formatting: " + prompt
-	response, err := LLM(dnsPrompt, nil)
+	llmResp, err := LLM(dnsPrompt, nil)
+	var responseText string
 	if err != nil {
-		response = "Error: " + err.Error()
+		responseText = "Error: " + err.Error()
+	} else {
+		responseText = llmResp.Content
 	}
 	
 	// Trim to DNS limits (allowing more room with EDNS0)
-	if len(response) > 2000 {
-		response = response[:1997] + "..."
+	if len(responseText) > 2000 {
+		responseText = responseText[:1997] + "..."
 	}
 	
-	fmt.Printf("LLM response: %s\n", response)
+	fmt.Printf("LLM response: %s\n", responseText)
 	fmt.Println("======= END DEBUG =======")
 	
-	respondWithTXT(m, q, response)
+	respondWithTXT(m, q, responseText)
 }
 
 
@@ -310,17 +313,20 @@ func handleSessionExec(m *dns.Msg, q dns.Question, subdomain string) {
 	
 	// Get LLM response for the reassembled query
 	dnsPrompt := "Answer in 2000 characters or less, no markdown formatting: " + query
-	response, err := LLM(dnsPrompt, nil)
+	llmResp, err := LLM(dnsPrompt, nil)
+	var responseText string
 	if err != nil {
-		response = fmt.Sprintf("Error processing %d chunks: %s", totalChunks, err.Error())
+		responseText = fmt.Sprintf("Error processing %d chunks: %s", totalChunks, err.Error())
+	} else {
+		responseText = llmResp.Content
 	}
 	
 	// Trim to DNS limits (allowing more room with EDNS0)
-	if len(response) > 2000 {
-		response = response[:1997] + "..."
+	if len(responseText) > 2000 {
+		responseText = responseText[:1997] + "..."
 	}
 	
-	respondWithTXT(m, q, response)
+	respondWithTXT(m, q, responseText)
 }
 
 // Count dots in a string
