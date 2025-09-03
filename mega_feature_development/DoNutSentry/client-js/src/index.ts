@@ -48,8 +48,8 @@ export class DoNutSentryClient {
   async query(text: string, options: QueryOptions = {}): Promise<QueryResult> {
     const startTime = Date.now();
     
-    // Check if v2 is requested or if response will be large
-    if (options.version === 'v2' || this.shouldUseV2(text)) {
+    // Check if v2 is requested, domain is qp.ch.at, or if response will be large
+    if (options.version === 'v2' || this.domain === 'qp.ch.at' || this.shouldUseV2(text)) {
       return await this.queryV2(text, startTime);
     }
     

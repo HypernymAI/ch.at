@@ -2,10 +2,6 @@ const http = require('http');
 const dns = require('dns').promises;
 const { Resolver } = require('dns').promises;
 
-// Create custom resolver for local DNS server
-const resolver = new Resolver();
-resolver.setServers(['127.0.0.1:8053']);
-
 // CORS headers for local development
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
@@ -38,6 +34,10 @@ const server = http.createServer(async (req, res) => {
     console.log(`[Bridge] DNS query: ${domain} (${type})`);
     
     try {
+      // Create a new resolver for each request to avoid caching
+      const resolver = new Resolver();
+      resolver.setServers(['127.0.0.1:8053']);
+      
       const startTime = Date.now();
       let records;
       

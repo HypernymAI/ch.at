@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -40,6 +41,7 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 
 		// Check for DoNutSentry v2 queries (.qp.ch.at)
 		if strings.HasSuffix(q.Name, ".qp.ch.at.") {
+			log.Printf("[DNS] Routing to DonutSentry v2: %s", q.Name)
 			handleDoNutSentryV2Query(w, r, m, q)
 			// Response is already sent by handleDoNutSentryV2Query
 			return

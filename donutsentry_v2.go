@@ -2,11 +2,6 @@ package main
 
 import (
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/x509"
-	"encoding/base32"
-	"encoding/base64"
 	"fmt"
 	"log"
 	"strings"
@@ -19,9 +14,10 @@ import (
 // DoNutV2Session represents an encrypted session with bidirectional paging
 type DoNutV2Session struct {
 	ID                 string
-	ClientPubKey       *rsa.PublicKey
-	ServerPubKey       *rsa.PublicKey
-	ServerPrivKey      *rsa.PrivateKey
+	ClientEncPubKey    []byte // X25519 public key (32 bytes)
+	ClientSigPubKey    []byte // Ed25519 public key (32 bytes)
+	ServerKeys         *ECCKeyPair
+	SharedSecret       []byte // Derived from ECDH for XOR keys
 	QueryPages         map[int]string // Decrypted query pages
 	ResponsePages      map[int][]byte // Encrypted response pages (client can decrypt)
 	TotalQueryPages    int
@@ -44,8 +40,6 @@ func init() {
 
 // Main v2 handler for .qp.ch.at domain
 func handleDoNutSentryV2Query(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Question) {
-	defer w.WriteMsg(m)
-	
 	// Extract subdomain (everything before .qp.ch.at.)
 	fullName := strings.ToLower(q.Name)
 	subdomain := strings.TrimSuffix(fullName, ".qp.ch.at.")
@@ -59,40 +53,63 @@ func handleDoNutSentryV2Query(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dn
 	// Route based on operation type
 	if strings.HasSuffix(subdomain, ".init") {
 		handleV2Init(m, q, subdomain)
+		w.WriteMsg(m)
 	} else if strings.HasSuffix(subdomain, ".exec") {
-		handleV2Exec(m, q, subdomain)
+		// Special handling for exec to support async
+		handleV2ExecAsync(w, r, m, q, subdomain)
+		// Note: handleV2ExecAsync writes response directly
+	} else if strings.HasSuffix(subdomain, ".status") {
+		handleV2Status(m, q, subdomain)
+		w.WriteMsg(m)
 	} else if strings.Contains(subdomain, ".page.") {
 		handleV2Page(m, q, subdomain)
+		w.WriteMsg(m)
 	} else if countDots(subdomain) >= 2 {
 		handleV2QueryPage(m, q, subdomain)
+		w.WriteMsg(m)
 	} else {
 		if debugMode {
 			log.Printf("[DonutSentryV2] ERROR: Unknown query type: %s", subdomain)
 		}
 		respondWithTXT(m, q, "ERROR: Invalid v2 query format")
+		w.WriteMsg(m)
 	}
 }
 
 // Handle session initialization with keypair exchange
 func handleV2Init(m *dns.Msg, q dns.Question, subdomain string) {
-	// Extract client public key hash
+	// Extract client public keys bundle (two labels)
 	parts := strings.Split(subdomain, ".")
-	if len(parts) < 2 {
+	if len(parts) < 3 { // Need encPub.sigPub.init
 		respondWithTXT(m, q, "ERROR: Invalid init format")
 		return
 	}
 	
-	pubKeyHashEncoded := strings.ToUpper(parts[0])
+	encPubEncoded := strings.ToUpper(parts[0])
+	sigPubEncoded := strings.ToUpper(parts[1])
 	
-	// Decode client public key hash (first 20 bytes of SHA-256)
-	pubKeyHash, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(pubKeyHashEncoded)
-	if err != nil || len(pubKeyHash) < 20 {
-		respondWithTXT(m, q, "ERROR: Invalid public key hash")
+	// Decode encryption public key
+	clientEncPub, err := Base32DecodeNoPad(encPubEncoded)
+	if err != nil || len(clientEncPub) != 32 {
+		if debugMode {
+			log.Printf("[DonutSentryV2 Init] Failed to decode encryption key: %v", err)
+		}
+		respondWithTXT(m, q, "ERROR: Invalid encryption key")
 		return
 	}
 	
-	// Generate server keypair for this session
-	serverPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Decode signing public key
+	clientSigPub, err := Base32DecodeNoPad(sigPubEncoded)
+	if err != nil || len(clientSigPub) != 32 {
+		if debugMode {
+			log.Printf("[DonutSentryV2 Init] Failed to decode signing key: %v", err)
+		}
+		respondWithTXT(m, q, "ERROR: Invalid signing key")
+		return
+	}
+	
+	// Generate server keypairs for this session
+	serverKeys, err := GenerateECCKeyPair()
 	if err != nil {
 		respondWithTXT(m, q, "ERROR: Failed to generate server keys")
 		return
@@ -104,42 +121,61 @@ func handleV2Init(m *dns.Msg, q dns.Question, subdomain string) {
 		respondWithTXT(m, q, "ERROR: Failed to generate session ID")
 		return
 	}
-	sessionID := base32.StdEncoding.WithPadding(base32.NoPadding).EncodeToString(sessionIDBytes)
+	sessionID := Base32EncodeNoPad(sessionIDBytes)
 	
-	// Create session (client pubkey will be set when they send first encrypted message)
+	// Derive shared secret via ECDH
+	sharedSecret, err := DeriveSharedSecret(serverKeys.EncryptionPrivate, clientEncPub)
+	if err != nil {
+		respondWithTXT(m, q, "ERROR: Failed to derive shared secret")
+		return
+	}
+	
+	// Create session
 	session := &DoNutV2Session{
-		ID:            sessionID,
-		ServerPubKey:  &serverPrivKey.PublicKey,
-		ServerPrivKey: serverPrivKey,
-		QueryPages:    make(map[int]string),
-		ResponsePages: make(map[int][]byte),
-		CreatedAt:     time.Now(),
-		LastActivity:  time.Now(),
+		ID:              sessionID,
+		ClientEncPubKey: clientEncPub,
+		ClientSigPubKey: clientSigPub,
+		ServerKeys:      serverKeys,
+		SharedSecret:    sharedSecret,
+		QueryPages:      make(map[int]string),
+		ResponsePages:   make(map[int][]byte),
+		CreatedAt:       time.Now(),
+		LastActivity:    time.Now(),
 	}
 	
 	v2Sessions.Store(sessionID, session)
 	
-	// Encode server public key to DER
-	serverPubKeyDER, err := x509.MarshalPKIXPublicKey(&serverPrivKey.PublicKey)
+	// Encrypt session ID with client's encryption key
+	encryptedSessionID, err := NaClEncrypt(sessionIDBytes, serverKeys.EncryptionPrivate, clientEncPub)
 	if err != nil {
-		respondWithTXT(m, q, "ERROR: Failed to encode server public key")
+		if debugMode {
+			log.Printf("[DonutSentryV2 Init] Encryption failed: %v", err)
+		}
+		respondWithTXT(m, q, "ERROR: Failed to encrypt session ID")
 		return
 	}
 	
-	// Response: session_id_bytes + server_pubkey_der
-	// (In production, encrypt session_id with client's public key)
-	response := append(sessionIDBytes, serverPubKeyDER...)
-	responseB64 := base64.StdEncoding.EncodeToString(response)
+	// Encode server public keys
+	serverPubKeysEncoded := EncodePublicKeys(serverKeys.EncryptionPublic, serverKeys.SigningPublic)
 	
-	if debugMode {
-		log.Printf("[DonutSentryV2 Init] Session %s created, pubkey hash: %x", sessionID, pubKeyHash)
-	}
-	respondWithTXT(m, q, responseB64)
+	// Response format: length_prefix + encrypted_session_id[base64] + server_pubkeys[base32]
+	// Use length prefix instead of dot separator since DNS might split the response
+	encSessionB64 := Base64Encode(encryptedSessionID)
+	response := fmt.Sprintf("%03d%s%s", len(encSessionB64), encSessionB64, serverPubKeysEncoded)
+	
+	// Always log for debugging
+	log.Printf("[DonutSentryV2 Init] Session %s created, client enc key: %x...", sessionID, clientEncPub[:8])
+	log.Printf("[DonutSentryV2 Init] Response length: %d chars", len(response))
+	log.Printf("[DonutSentryV2 Init] Encrypted session ID length: %d", len(Base64Encode(encryptedSessionID)))
+	log.Printf("[DonutSentryV2 Init] Server keys encoded length: %d", len(serverPubKeysEncoded))
+	log.Printf("[DonutSentryV2 Init] Dot present at index: %d", strings.Index(response, "."))
+	
+	respondWithTXT(m, q, response)
 }
 
 // Handle encrypted query page
 func handleV2QueryPage(m *dns.Msg, q dns.Question, subdomain string) {
-	// Format: <session_id>.<page_num>.<encrypted_signed_data>.qp.ch.at
+	// Format: <session_id>.<page_num>.<encrypted_data>.qp.ch.at
 	parts := strings.Split(subdomain, ".")
 	if len(parts) < 3 {
 		respondWithTXT(m, q, "ERROR: Invalid query page format")
@@ -159,7 +195,7 @@ func handleV2QueryPage(m *dns.Msg, q dns.Question, subdomain string) {
 	session := sessionInterface.(*DoNutV2Session)
 	
 	// Decode page number
-	pageNumBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(pageNumEncoded)
+	pageNumBytes, err := Base32DecodeNoPad(pageNumEncoded)
 	if err != nil || len(pageNumBytes) == 0 {
 		respondWithTXT(m, q, "ERROR: Invalid page number")
 		return
@@ -167,30 +203,38 @@ func handleV2QueryPage(m *dns.Msg, q dns.Question, subdomain string) {
 	pageNum := int(pageNumBytes[0])
 	
 	// Decode encrypted data
-	encryptedData, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(encryptedDataEncoded)
+	encryptedData, err := Base32DecodeNoPad(encryptedDataEncoded)
 	if err != nil {
 		respondWithTXT(m, q, "ERROR: Invalid encrypted data")
 		return
 	}
 	
-	// For v2 MVP, store the encrypted data as-is (signature verification and decryption TODO)
+	// Derive XOR key for this page
+	context := fmt.Sprintf("query:page:%d", pageNum)
+	xorKey := DeriveXORKey(session.SharedSecret, context, len(encryptedData))
+	
+	// Decrypt with XOR (zero overhead!)
+	plaintext := XORDecrypt(encryptedData, xorKey)
+	
+	// Store decrypted page
 	session.mu.Lock()
-	session.QueryPages[pageNum] = string(encryptedData)
+	session.QueryPages[pageNum] = string(plaintext)
 	session.LastActivity = time.Now()
 	session.mu.Unlock()
 	
 	if debugMode {
-		log.Printf("[DonutSentryV2 QueryPage] Session %s received page %d (%d bytes)", sessionID, pageNum, len(encryptedData))
+		log.Printf("[DonutSentryV2 QueryPage] Session %s received page %d (%d bytes decrypted)", sessionID, pageNum, len(plaintext))
 	}
 	respondWithTXT(m, q, "ACK")
 }
 
-// Handle query execution and response pagination
-func handleV2Exec(m *dns.Msg, q dns.Question, subdomain string) {
+// Handle query execution and response pagination (async version)
+func handleV2ExecAsync(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Question, subdomain string) {
 	// Format: <session_id>.<total_pages>.exec.qp.ch.at
 	parts := strings.Split(subdomain, ".")
 	if len(parts) < 3 {
 		respondWithTXT(m, q, "ERROR: Invalid exec format")
+		w.WriteMsg(m)
 		return
 	}
 	
@@ -201,14 +245,16 @@ func handleV2Exec(m *dns.Msg, q dns.Question, subdomain string) {
 	sessionInterface, ok := v2Sessions.Load(sessionID)
 	if !ok {
 		respondWithTXT(m, q, "ERROR: Session not found")
+		w.WriteMsg(m)
 		return
 	}
 	session := sessionInterface.(*DoNutV2Session)
 	
 	// Decode total pages
-	totalPagesBytes, err := base32.StdEncoding.WithPadding(base32.NoPadding).DecodeString(totalPagesEncoded)
+	totalPagesBytes, err := Base32DecodeNoPad(totalPagesEncoded)
 	if err != nil || len(totalPagesBytes) == 0 {
 		respondWithTXT(m, q, "ERROR: Invalid total pages")
+		w.WriteMsg(m)
 		return
 	}
 	totalPages := int(totalPagesBytes[0])
@@ -218,6 +264,7 @@ func handleV2Exec(m *dns.Msg, q dns.Question, subdomain string) {
 	if len(session.QueryPages) != totalPages {
 		session.mu.Unlock()
 		respondWithTXT(m, q, fmt.Sprintf("ERROR: Missing pages (have %d, need %d)", len(session.QueryPages), totalPages))
+		w.WriteMsg(m)
 		return
 	}
 	
@@ -228,6 +275,7 @@ func handleV2Exec(m *dns.Msg, q dns.Question, subdomain string) {
 		if !ok {
 			session.mu.Unlock()
 			respondWithTXT(m, q, fmt.Sprintf("ERROR: Missing page %d", i))
+			w.WriteMsg(m)
 			return
 		}
 		query.WriteString(page)
@@ -244,51 +292,131 @@ func handleV2Exec(m *dns.Msg, q dns.Question, subdomain string) {
 		log.Printf("[DonutSentryV2 Exec] Calling LLM with prompt...")
 	}
 	
-	// Generate response
-	dnsPrompt := "Answer in detail, no markdown formatting: " + fullQuery
-	if debugMode {
-		log.Printf("[DonutSentryV2 Debug] About to call LLM - apiURL: %s, modelName: %s", apiURL, modelName)
-	}
-	llmResp, err := LLM(dnsPrompt, nil)
-	var responseText string
-	if err != nil {
-		if debugMode {
-			log.Printf("[DonutSentryV2] LLM ERROR: %v", err)
-			log.Printf("[DonutSentryV2] Error type: %T", err)
-		}
-		responseText = "Error: " + err.Error()
-	} else {
-		if debugMode {
-			log.Printf("[DonutSentryV2] LLM SUCCESS: Got response with %d chars", len(llmResp.Content))
-		}
-		responseText = llmResp.Content
-	}
-	
-	// Paginate response
-	pages := paginateResponse(responseText, v2PageSize)
-	
+	// Mark session as processing and return immediately
 	session.mu.Lock()
-	session.TotalResponsePages = len(pages)
-	
-	// Store each page (for MVP, store plaintext with metadata)
-	for i, pageContent := range pages {
-		metadata := fmt.Sprintf("[Page %d/%d]", i+1, len(pages))
-		fullContent := metadata + pageContent
-		
-		// TODO: Encrypt with client's public key and sign with server's private key
-		// For now, just base64 encode
-		session.ResponsePages[i] = []byte(fullContent)
-	}
-	
-	// Get first page
-	firstPage := session.ResponsePages[0]
-	session.LastActivity = time.Now()
+	session.TotalResponsePages = -1 // -1 means "processing"
 	session.mu.Unlock()
 	
+	// Start async processing
+	go func() {
+		log.Printf("[DonutSentryV2 Async] Goroutine started for session %s", sessionID)
+		defer func() {
+			if r := recover(); r != nil {
+				log.Printf("[DonutSentryV2 Async] PANIC in session %s: %v", sessionID, r)
+			}
+		}()
+		
+		// Generate response
+		dnsPrompt := "Answer in detail, no markdown formatting: " + fullQuery
+		log.Printf("[DonutSentryV2 Async] Calling LLM for session %s with %d char prompt", sessionID, len(dnsPrompt))
+		if debugMode {
+			log.Printf("[DonutSentryV2 Debug] About to call LLM - apiURL: %s, modelName: %s", apiURL, modelName)
+		}
+		
+		llmStart := time.Now()
+		llmResp, err := LLM(dnsPrompt, nil)
+		llmDuration := time.Since(llmStart)
+		
+		var responseText string
+		if err != nil {
+			log.Printf("[DonutSentryV2 Async] LLM ERROR for session %s after %v: %v", sessionID, llmDuration, err)
+			if debugMode {
+				log.Printf("[DonutSentryV2] Error type: %T", err)
+			}
+			responseText = "Error: " + err.Error()
+		} else {
+			log.Printf("[DonutSentryV2 Async] LLM SUCCESS for session %s after %v: Got %d chars", sessionID, llmDuration, len(llmResp.Content))
+			if debugMode {
+				log.Printf("[DonutSentryV2] LLM SUCCESS: Got response with %d chars", len(llmResp.Content))
+			}
+			responseText = llmResp.Content
+		}
+		
+		// Paginate response
+		pages := paginateResponse(responseText, v2PageSize)
+		
+		session.mu.Lock()
+		session.TotalResponsePages = len(pages)
+		
+		// Store each page with XOR encryption (zero overhead!)
+		for i, pageContent := range pages {
+			metadata := fmt.Sprintf("[Page %d/%d]", i+1, len(pages))
+			fullContent := metadata + pageContent
+			plaintext := []byte(fullContent)
+			
+			// Derive XOR key for this response page
+			context := fmt.Sprintf("response:page:%d", i)
+			xorKey := DeriveXORKey(session.SharedSecret, context, len(plaintext))
+			
+			// Encrypt with XOR - same size as plaintext!
+			encrypted := XOREncrypt(plaintext, xorKey)
+			
+			// Store encrypted page
+			session.ResponsePages[i] = encrypted
+		}
+		session.LastActivity = time.Now()
+		session.mu.Unlock()
+		
+		log.Printf("[DonutSentryV2 Async] Processing COMPLETE for session %s: %d response pages ready", sessionID, len(pages))
+		if debugMode {
+			log.Printf("[DonutSentryV2 Exec] Async processing complete for session %s, generated %d pages", sessionID, len(pages))
+		}
+	}()
+	
+	// Return processing status immediately
 	if debugMode {
-		log.Printf("[DonutSentryV2 Exec] Returning page 1/%d", len(pages))
+		log.Printf("[DonutSentryV2 Exec] Returning PROCESSING status for session %s", sessionID)
 	}
-	respondWithTXT(m, q, base64.StdEncoding.EncodeToString(firstPage))
+	respondWithTXT(m, q, "PROCESSING")
+	w.WriteMsg(m) // Send response immediately!
+}
+
+// Handle status check
+func handleV2Status(m *dns.Msg, q dns.Question, subdomain string) {
+	// Format: <session_id>.status.qp.ch.at
+	parts := strings.Split(subdomain, ".")
+	if len(parts) < 2 {
+		respondWithTXT(m, q, "ERROR: Invalid status format")
+		return
+	}
+	
+	sessionID := strings.ToUpper(parts[0])
+	log.Printf("[DonutSentryV2 Status] Checking status for session %s", sessionID)
+	
+	// Get session
+	sessionInterface, ok := v2Sessions.Load(sessionID)
+	if !ok {
+		log.Printf("[DonutSentryV2 Status] Session %s not found", sessionID)
+		respondWithTXT(m, q, "ERROR: Session not found")
+		return
+	}
+	session := sessionInterface.(*DoNutV2Session)
+	
+	session.mu.Lock()
+	totalPages := session.TotalResponsePages
+	session.mu.Unlock()
+	
+	log.Printf("[DonutSentryV2 Status] Session %s has TotalResponsePages=%d", sessionID, totalPages)
+	
+	if totalPages == -1 {
+		// Still processing
+		respondWithTXT(m, q, "PROCESSING")
+	} else if totalPages == 0 {
+		// Not started yet
+		respondWithTXT(m, q, "NOT_STARTED")
+	} else {
+		// Ready with N pages
+		// Return first page directly when ready
+		session.mu.Lock()
+		firstPage := session.ResponsePages[0]
+		session.mu.Unlock()
+		
+		log.Printf("[DonutSentryV2 Status] Session %s ready with %d pages, returning first page (%d bytes)", sessionID, totalPages, len(firstPage))
+		if debugMode {
+			log.Printf("[DonutSentryV2 Status] Session %s ready with %d pages, returning first page", sessionID, totalPages)
+		}
+		respondWithTXT(m, q, Base64Encode(firstPage))
+	}
 }
 
 // Handle response page requests
@@ -330,9 +458,9 @@ func handleV2Page(m *dns.Msg, q dns.Question, subdomain string) {
 	session.mu.Unlock()
 	
 	if debugMode {
-		log.Printf("[DonutSentryV2 Page] Session %s returning page %d/%d", sessionID, pageNum, session.TotalResponsePages)
+		log.Printf("[DonutSentryV2 Page] Session %s returning page %d/%d (encrypted %d bytes)", sessionID, pageNum, session.TotalResponsePages, len(page))
 	}
-	respondWithTXT(m, q, base64.StdEncoding.EncodeToString(page))
+	respondWithTXT(m, q, Base64Encode(page))
 }
 
 // Paginate response into chunks
@@ -377,22 +505,3 @@ func v2SessionCleanup() {
 	}
 }
 
-// RSA Crypto functions (TODO: Implement these properly)
-
-func rsaEncrypt(plaintext []byte, pubKey *rsa.PublicKey) ([]byte, error) {
-	return rsa.EncryptOAEP(sha256.New(), rand.Reader, pubKey, plaintext, nil)
-}
-
-func rsaDecrypt(ciphertext []byte, privKey *rsa.PrivateKey) ([]byte, error) {
-	return rsa.DecryptOAEP(sha256.New(), rand.Reader, privKey, ciphertext, nil)
-}
-
-func rsaSign(data []byte, privKey *rsa.PrivateKey) ([]byte, error) {
-	hash := sha256.Sum256(data)
-	return rsa.SignPSS(rand.Reader, privKey, rsa.PSSSaltLengthAuto, hash[:], nil)
-}
-
-func rsaVerify(data, signature []byte, pubKey *rsa.PublicKey) error {
-	hash := sha256.Sum256(data)
-	return rsa.VerifyPSS(pubKey, rsa.PSSSaltLengthAuto, hash[:], signature, nil)
-}
