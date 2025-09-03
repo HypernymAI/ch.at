@@ -4,6 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DonutSentry v2 Protocol Demo</title>
+    <!-- Load tweetnacl for crypto -->
+    <script src="https://unpkg.com/tweetnacl@1.0.3/nacl-fast.min.js"></script>
+    <script src="https://unpkg.com/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
     <style>
         body {
             font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
@@ -351,7 +354,9 @@
             
             try {
                 const startTime = Date.now();
-                const response = await fetch(url);
+                const response = await fetch(url, {
+                    cache: 'no-store'
+                });
                 const data = await response.json();
                 const duration = Date.now() - startTime;
                 
@@ -367,15 +372,18 @@
             }
         }
 
-        // Base32 encoding (simplified for demo)
+        // Base32 encoding/decoding
         function base32Encode(data) {
+            if (typeof data === 'string') {
+                data = new TextEncoder().encode(data);
+            }
             const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
             let result = '';
             let buffer = 0;
             let bitsLeft = 0;
             
             for (let i = 0; i < data.length; i++) {
-                buffer = (buffer << 8) | data.charCodeAt(i);
+                buffer = (buffer << 8) | data[i];
                 bitsLeft += 8;
                 
                 while (bitsLeft >= 5) {
@@ -391,27 +399,101 @@
             return result;
         }
 
-        // Generate mock public key hash
-        function generatePubKeyHash() {
-            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
-            let hash = '';
-            for (let i = 0; i < 32; i++) {
-                hash += chars[Math.floor(Math.random() * chars.length)];
+        function base32Decode(encoded) {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            // Add padding if needed
+            const padded = encoded + '='.repeat((8 - encoded.length % 8) % 8);
+            
+            let buffer = 0;
+            let bitsLeft = 0;
+            const output = [];
+            
+            for (let i = 0; i < padded.length; i++) {
+                const char = padded[i];
+                if (char === '=') break;
+                
+                const val = alphabet.indexOf(char);
+                if (val === -1) throw new Error('Invalid base32 character');
+                
+                buffer = (buffer << 5) | val;
+                bitsLeft += 5;
+                
+                if (bitsLeft >= 8) {
+                    output.push((buffer >> (bitsLeft - 8)) & 0xFF);
+                    bitsLeft -= 8;
+                }
             }
-            return hash;
+            
+            return new Uint8Array(output);
+        }
+
+        // Crypto functions using tweetnacl
+        let clientKeys = null;
+        let sharedSecret = null;
+
+        function generateKeyPairs() {
+            return {
+                encryptionKeys: nacl.box.keyPair(),
+                signingKeys: nacl.sign.keyPair()
+            };
+        }
+
+        function deriveSharedSecret(privateKey, publicKey) {
+            return nacl.box.before(publicKey, privateKey);
+        }
+
+        async function sha256(data) {
+            const buffer = await crypto.subtle.digest('SHA-256', data);
+            return new Uint8Array(buffer);
+        }
+
+        async function deriveXORKey(sharedSecret, context, length) {
+            const key = new Uint8Array(length);
+            const contextBytes = new TextEncoder().encode(context);
+            
+            for (let i = 0; i < length; i += 32) {
+                // Create input: sharedSecret || context || counter
+                const input = new Uint8Array(sharedSecret.length + contextBytes.length + 1);
+                input.set(sharedSecret, 0);
+                input.set(contextBytes, sharedSecret.length);
+                input[sharedSecret.length + contextBytes.length] = i / 32;
+                
+                // Hash it
+                const hash = await sha256(input);
+                
+                // Copy to output
+                const copyLen = Math.min(32, length - i);
+                key.set(hash.slice(0, copyLen), i);
+            }
+            
+            return key;
+        }
+
+        function xorEncrypt(plaintext, key) {
+            if (key.length < plaintext.length) {
+                throw new Error('XOR key too short');
+            }
+            const result = new Uint8Array(plaintext.length);
+            for (let i = 0; i < plaintext.length; i++) {
+                result[i] = plaintext[i] ^ key[i];
+            }
+            return result;
+        }
+
+        function xorDecrypt(ciphertext, key) {
+            return xorEncrypt(ciphertext, key); // XOR is symmetric
         }
 
         // Calculate query pages
         function calculateQueryPages(query) {
-            // Convert query to bytes and then base32 encode
+            // With XOR encryption, we have zero overhead!
             const queryBytes = new TextEncoder().encode(query);
-            const maxBytesPerPage = 38; // ~38 bytes per page (will be ~60 chars base32)
+            const maxBytesPerPage = 39; // 39 bytes per page (62 chars base32)
             const pages = [];
             
             for (let i = 0; i < queryBytes.length; i += maxBytesPerPage) {
                 const pageBytes = queryBytes.slice(i, i + maxBytesPerPage);
-                const pageStr = new TextDecoder().decode(pageBytes);
-                pages.push(pageStr);
+                pages.push(pageBytes);
             }
             
             return pages;
@@ -444,27 +526,55 @@
             try {
                 // Phase 1: Session Initialization
                 addPhase('Session Initialization', 'Establishing secure session with keypair exchange');
-                const pubKeyHash = generatePubKeyHash();
-                const initDomain = `${pubKeyHash}.init.qp.ch.at`;
+                
+                // Generate real keypairs
+                clientKeys = generateKeyPairs();
+                const encPubKey = base32Encode(clientKeys.encryptionKeys.publicKey);
+                const sigPubKey = base32Encode(clientKeys.signingKeys.publicKey);
+                const initDomain = `${encPubKey}.${sigPubKey}.init.qp.ch.at`;
                 
                 const initStart = Date.now();
                 const initResponse = await dnsQuery(initDomain);
                 metrics.sessionInit = Date.now() - initStart;
                 
                 // Parse session ID from response
-                // Response is base64: first 16 bytes are session ID
-                const responseData = atob(initResponse[0]);
-                // First 16 bytes are session ID
-                const sessionIdBytes = responseData.slice(0, 16);
-                // Convert to base32 for DNS compatibility
+                // Response format: length_prefix[3] + encrypted_session_id[base64] + server_pubkeys[base32]
+                const initResponseStr = initResponse[0];
+                const encSessionLen = parseInt(initResponseStr.substring(0, 3));
+                const encryptedSessionIdB64 = initResponseStr.substring(3, 3 + encSessionLen);
+                const serverPubKeysB32 = initResponseStr.substring(3 + encSessionLen);
+                
+                // Decode server public keys
+                const serverKeys = base32Decode(serverPubKeysB32);
+                const serverEncPubKey = serverKeys.slice(0, 32);
+                const serverSigPubKey = serverKeys.slice(32, 64);
+                
+                // Derive shared secret
+                sharedSecret = deriveSharedSecret(clientKeys.encryptionKeys.secretKey, serverEncPubKey);
+                
+                // Decrypt session ID
+                const encryptedSessionId = nacl.util.decodeBase64(encryptedSessionIdB64);
+                const decrypted = nacl.box.open(
+                    encryptedSessionId.slice(24), // ciphertext after nonce
+                    encryptedSessionId.slice(0, 24), // nonce
+                    serverEncPubKey,
+                    clientKeys.encryptionKeys.secretKey
+                );
+                
+                if (!decrypted) {
+                    throw new Error('Failed to decrypt session ID');
+                }
+                
+                // Extract session ID (first 16 bytes)
+                const sessionIdBytes = decrypted.slice(0, 16);
                 sessionId = base32Encode(sessionIdBytes);
-                // Rest is server public key (we'll ignore for demo)
-                const serverPubKey = responseData.slice(16);
+                
                 log(`Session established: ${sessionId}`, 'success');
+                log(`Shared secret derived for XOR encryption`, 'info');
                 updatePhase('Session Initialization', `
                     <div class="metric">Session ID: ${sessionId}</div>
                     <div class="metric">Duration: ${metrics.sessionInit}ms</div>
-                    <div class="metric">Server pubkey: ${serverPubKey.length} bytes</div>
+                    <div class="metric">Shared secret: ✓</div>
                 `);
 
                 // Phase 2: Query Chunking and Transmission
@@ -475,10 +585,18 @@
                 let queryPagesHtml = '';
                 for (let i = 0; i < queryPages.length; i++) {
                     // Convert page number to base32 encoding
-                    const pageNumBytes = String.fromCharCode(i);
-                    const pageNum = base32Encode(pageNumBytes).substring(0, 2);
-                    // Base32 encode the query page content
-                    const encodedPage = base32Encode(queryPages[i]);
+                    const pageNumBytes = new Uint8Array([i]);
+                    const pageNum = base32Encode(pageNumBytes).substring(0, 2).padEnd(2, 'A');
+                    
+                    // Derive XOR key for this page
+                    const context = `query:page:${i}`;
+                    const xorKey = await deriveXORKey(sharedSecret, context, queryPages[i].length);
+                    
+                    // Encrypt with XOR
+                    const encrypted = xorEncrypt(queryPages[i], xorKey);
+                    
+                    // Base32 encode the encrypted content
+                    const encodedPage = base32Encode(encrypted);
                     const domain = `${sessionId}.${pageNum}.${encodedPage}.qp.ch.at`;
                     
                     const pageStart = Date.now();
@@ -499,26 +617,85 @@
                 // Phase 3: Execute Query
                 addPhase('Query Execution', 'Server processing query and generating response');
                 // Encode total pages count
-                const totalPagesBytes = String.fromCharCode(queryPages.length);
-                const totalPagesEncoded = base32Encode(totalPagesBytes).padEnd(2, 'A');
+                const totalPagesBytes = new Uint8Array([queryPages.length]);
+                const totalPagesEncoded = base32Encode(totalPagesBytes).substring(0, 2).padEnd(2, 'A');
                 const execDomain = `${sessionId}.${totalPagesEncoded}.exec.qp.ch.at`;
                 
                 const execStart = Date.now();
                 const execResponse = await dnsQuery(execDomain);
                 metrics.execute = Date.now() - execStart;
                 
-                // Parse first page - it's base64 encoded
+                // Parse first page - handle both PROCESSING and direct response
                 let firstPageData, totalPages = 1;
-                try {
-                    const decodedPage = atob(execResponse[0]);
-                    firstPageData = decodedPage;
-                    const pageMatch = decodedPage.match(/\[Page (\d+)\/(\d+)\]/);
-                    totalPages = pageMatch ? parseInt(pageMatch[2]) : 1;
-                } catch (e) {
-                    // If not base64, use as-is
-                    firstPageData = execResponse[0];
-                    const pageMatch = firstPageData.match(/\[Page (\d+)\/(\d+)\]/);
-                    totalPages = pageMatch ? parseInt(pageMatch[2]) : 1;
+                
+                if (execResponse[0] === 'PROCESSING') {
+                    log('Query submitted for processing, polling for results...', 'info');
+                    
+                    // Poll for status
+                    let pollCount = 0;
+                    
+                    while (pollCount < 60) { // Max 60 polls (1 minute)
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                        pollCount++;
+                        
+                        const statusDomain = `${sessionId}.status.qp.ch.at`;
+                        const statusResponse = await dnsQuery(statusDomain);
+                        
+                        log(`Status response (attempt ${pollCount}): ${statusResponse[0].substring(0, 50)}...`, 'info');
+                        
+                        if (statusResponse[0] === 'PROCESSING') {
+                            if (pollCount % 5 === 0) {
+                                log(`Still processing... (${pollCount}s)`, 'info');
+                            }
+                            continue;
+                        }
+                        
+                        // Response is ready - it contains the first page
+                        try {
+                            const encryptedData = nacl.util.decodeBase64(statusResponse[0]);
+                            
+                            // Derive XOR key for first response page
+                            const context = 'response:page:0';
+                            const xorKey = await deriveXORKey(sharedSecret, context, encryptedData.length);
+                            
+                            // Decrypt with XOR
+                            const decrypted = xorDecrypt(encryptedData, xorKey);
+                            firstPageData = new TextDecoder().decode(decrypted);
+                            
+                            const pageMatch = firstPageData.match(/\[Page (\d+)\/(\d+)\]/);
+                            totalPages = pageMatch ? parseInt(pageMatch[2]) : 1;
+                            break;
+                        } catch (e) {
+                            log(`Error decrypting first page: ${e.message}`, 'error');
+                            throw e;
+                        }
+                    }
+                    
+                    if (!firstPageData) {
+                        throw new Error('Query processing timed out after 60 seconds');
+                    }
+                    
+                    metrics.execute = pollCount * 1000; // Convert to ms
+                    
+                } else {
+                    // Direct response (backward compatibility)
+                    try {
+                        const encryptedData = nacl.util.decodeBase64(execResponse[0]);
+                        
+                        // Derive XOR key for first response page
+                        const context = 'response:page:0';
+                        const xorKey = await deriveXORKey(sharedSecret, context, encryptedData.length);
+                        
+                        // Decrypt with XOR
+                        const decrypted = xorDecrypt(encryptedData, xorKey);
+                        firstPageData = new TextDecoder().decode(decrypted);
+                        
+                        const pageMatch = firstPageData.match(/\[Page (\d+)\/(\d+)\]/);
+                        totalPages = pageMatch ? parseInt(pageMatch[2]) : 1;
+                    } catch (e) {
+                        log(`Error decrypting first page: ${e.message}`, 'error');
+                        throw e;
+                    }
                 }
                 
                 log(`Response has ${totalPages} pages`, 'info');
@@ -542,13 +719,22 @@
                     const pageDuration = Date.now() - pageStart;
                     metrics.responsePages.push(pageDuration);
                     
-                    // Decode page response
+                    // Decode and decrypt page response
                     let pageContent;
                     try {
-                        const decodedPage = atob(pageResponse[0]);
-                        pageContent = decodedPage.replace(/\[Page \d+\/\d+\]/, '');
+                        const encryptedData = nacl.util.decodeBase64(pageResponse[0]);
+                        
+                        // Derive XOR key for this response page (0-indexed on server)
+                        const context = `response:page:${i - 1}`;
+                        const xorKey = await deriveXORKey(sharedSecret, context, encryptedData.length);
+                        
+                        // Decrypt with XOR
+                        const decrypted = xorDecrypt(encryptedData, xorKey);
+                        const decryptedStr = new TextDecoder().decode(decrypted);
+                        pageContent = decryptedStr.replace(/\[Page \d+\/\d+\]/, '');
                     } catch (e) {
-                        pageContent = pageResponse[0].replace(/\[Page \d+\/\d+\]/, '');
+                        log(`Error decrypting page ${i}: ${e.message}`, 'error');
+                        throw e;
                     }
                     fullResponse += pageContent;
                     
