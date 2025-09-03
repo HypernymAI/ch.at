@@ -6,21 +6,84 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"strings"
 )
 
 var (
-	apiKey    = os.Getenv("API_KEY")
-	apiURL    = os.Getenv("API_URL")
-	modelName = os.Getenv("MODEL_NAME")
+	apiKey    string
+	apiURL    string
+	modelName string
 )
+
+func init() {
+	if debugMode {
+		log.Println("[LLM init] Running LLM init")
+	}
+	// Force reload from env in case they weren't set yet
+	loadLLMConfig()
+	if debugMode {
+		log.Printf("[LLM init] After loadLLMConfig - apiURL: %s", apiURL)
+	}
+}
+
+func loadLLMConfig() {
+	apiKey = os.Getenv("OPENAI_API_KEY")
+	apiURL = os.Getenv("API_URL")
+	modelName = os.Getenv("MODEL_NAME")
+	
+	if debugMode {
+		log.Printf("[loadLLMConfig] Loading from env - apiKey exists: %v, apiURL: '%s', modelName: '%s'", len(apiKey) > 0, apiURL, modelName)
+		log.Printf("[loadLLMConfig] Variables set - &apiURL: %p, &modelName: %p", &apiURL, &modelName)
+	}
+}
 
 // LLM calls the language model. If stream is nil, returns complete response via return value.
 // If stream is provided, streams response chunks to channel and returns empty string.
 // Input can be a string (wrapped as user message) or []map[string]string for full message history.
 func LLM(input interface{}, stream chan<- string) (string, error) {
+
+// generateSignature creates a hash signature for content
+func generateSignature(content string) string {
+	hash := sha256.Sum256([]byte(content))
+	return fmt.Sprintf("%x", hash)[:16] // First 16 chars of hash
+}
+
+// LLMResponse contains the response and metadata from an LLM call
+type LLMResponse struct {
+	Content         string
+	InputTokens     int
+	OutputTokens    int
+	InputHash       string
+	OutputHash      string
+	Model           string
+	FinishReason    string
+	ContentFiltered bool
+}
+
+// LLM calls the language model. If stream is nil, returns complete response via return value.
+// If stream is provided, streams response chunks to channel and returns empty string.
+// Input can be a string (wrapped as user message) or []map[string]string for full message history.
+func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
+	if debugMode {
+		log.Printf("[LLM] === LLM FUNCTION CALLED ===")
+		log.Printf("[LLM] Input type: %T", input)
+		log.Printf("[LLM] Initial state - apiURL: '%s', modelName: '%s', apiKey exists: %v", apiURL, modelName, len(apiKey) > 0)
+	}
+	
+	// Ensure config is loaded
+	if apiURL == "" {
+		if debugMode {
+			log.Printf("[LLM] WARNING: apiURL is empty, reloading config...")
+		}
+		loadLLMConfig()
+		if debugMode {
+			log.Printf("[LLM] After reload - apiURL: '%s', modelName: '%s'", apiURL, modelName)
+		}
+	}
+	
 	// Build messages array
 	var messages []map[string]string
 	switch v := input.(type) {
@@ -52,8 +115,31 @@ func LLM(input interface{}, stream chan<- string) (string, error) {
 		return "", err
 	}
 
+	// Double-check apiURL is set
+	if apiURL == "" {
+		if debugMode {
+			log.Printf("[LLM] CRITICAL: apiURL is still empty before request!")
+			log.Printf("[LLM] Attempting emergency reload...")
+		}
+		loadLLMConfig()
+		if debugMode {
+			log.Printf("[LLM] After emergency reload - apiURL: '%s'", apiURL)
+		}
+		if apiURL == "" {
+			log.Printf("[LLM] FATAL: apiURL still empty after reload")
+			return nil, fmt.Errorf("API URL not configured")
+		}
+	}
+	
+	if debugMode {
+		log.Printf("[LLM] Creating HTTP request to: '%s'", apiURL)
+		log.Printf("[LLM] Request body size: %d bytes", len(jsonBody))
+	}
 	req, err := http.NewRequest("POST", apiURL, bytes.NewBuffer(jsonBody))
 	if err != nil {
+		if debugMode {
+			log.Printf("[LLM] Failed to create request: %v", err)
+		}
 		return "", err
 	}
 

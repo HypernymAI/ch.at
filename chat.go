@@ -1,15 +1,19 @@
 package main
 
-// Configuration - edit source code and recompile to change settings
-// To disable a service: set its port to 0 or delete its .go file
-const (
-	HTTP_PORT  = 80  // Web interface (set to 0 to disable)
-	HTTPS_PORT = 443 // TLS web interface (set to 0 to disable)
-	SSH_PORT   = 22  // Anonymous SSH chat (set to 0 to disable)
-	DNS_PORT   = 53  // DNS TXT chat (set to 0 to disable)
+import (
+	"flag"
+	"log"
 )
 
+// Note: Port configuration has moved to config.go
+// Use HIGH_PORT_MODE=true environment variable for development
+
+var debugMode bool
+
 func main() {
+	// Parse command line flags
+	flag.BoolVar(&debugMode, "debug", false, "Enable debug logging")
+	flag.Parse()
 	// SSH Server
 	if SSH_PORT > 0 {
 		go func() {
