@@ -29,7 +29,7 @@ type DoNutV2Session struct {
 
 var (
 	v2Sessions    = &sync.Map{} // session_id -> *DoNutV2Session
-	v2SessionTTL  = 4 * time.Hour
+	v2SessionTTL  = 5 * time.Minute // Cap sessions at 5 minutes
 	v2PageSize    = 400 // Characters per response page
 )
 
@@ -317,20 +317,27 @@ func handleV2ExecAsync(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Quest
 		llmResp, err := LLM(dnsPrompt, nil)
 		llmDuration := time.Since(llmStart)
 		
-		var responseText string
 		if err != nil {
 			log.Printf("[DonutSentryV2 Async] LLM ERROR for session %s after %v: %v", sessionID, llmDuration, err)
-			if debugMode {
-				log.Printf("[DonutSentryV2] Error type: %T", err)
-			}
-			responseText = "Error: " + err.Error()
-		} else {
-			log.Printf("[DonutSentryV2 Async] LLM SUCCESS for session %s after %v: Got %d chars", sessionID, llmDuration, len(llmResp.Content))
-			if debugMode {
-				log.Printf("[DonutSentryV2] LLM SUCCESS: Got response with %d chars", len(llmResp.Content))
-			}
-			responseText = llmResp.Content
+			
+			// For ANY error - clear all data but keep session alive
+			session.mu.Lock()
+			session.TotalResponsePages = -2 // Special value for "failed"
+			session.QueryPages = make(map[int]string) // Clear query data
+			session.ResponsePages = make(map[int][]byte) // Clear any response data
+			session.LastActivity = time.Now() // Keep session alive for 5 minutes
+			session.mu.Unlock()
+			
+			log.Printf("[DonutSentryV2 Async] Session %s data cleared due to error", sessionID)
+			return
 		}
+		
+		// Success case
+		log.Printf("[DonutSentryV2 Async] LLM SUCCESS for session %s after %v: Got %d chars", sessionID, llmDuration, len(llmResp.Content))
+		if debugMode {
+			log.Printf("[DonutSentryV2] LLM SUCCESS: Got response with %d chars", len(llmResp.Content))
+		}
+		responseText := llmResp.Content
 		
 		// Paginate response
 		pages := paginateResponse(responseText, v2PageSize)
@@ -401,6 +408,9 @@ func handleV2Status(m *dns.Msg, q dns.Question, subdomain string) {
 	if totalPages == -1 {
 		// Still processing
 		respondWithTXT(m, q, "PROCESSING")
+	} else if totalPages == -2 {
+		// Failed - data cleared
+		respondWithTXT(m, q, "FAILED")
 	} else if totalPages == 0 {
 		// Not started yet
 		respondWithTXT(m, q, "NOT_STARTED")
@@ -481,17 +491,28 @@ func paginateResponse(text string, pageSize int) []string {
 
 // Clean up expired sessions
 func v2SessionCleanup() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(1 * time.Minute) // Check every minute
 	defer ticker.Stop()
 	
 	for range ticker.C {
 		now := time.Now()
 		var toDelete []string
+		var stuckProcessing int
 		
 		v2Sessions.Range(func(key, value interface{}) bool {
 			session := value.(*DoNutV2Session)
-			if now.Sub(session.LastActivity) > v2SessionTTL {
+			session.mu.Lock()
+			totalPages := session.TotalResponsePages
+			lastActivity := session.LastActivity
+			session.mu.Unlock()
+			
+			// Delete if expired (5 minutes)
+			if now.Sub(lastActivity) > v2SessionTTL {
 				toDelete = append(toDelete, key.(string))
+			} else if totalPages == -1 && now.Sub(lastActivity) > 2*time.Minute {
+				// Also delete if stuck in processing for >2 minutes
+				toDelete = append(toDelete, key.(string))
+				stuckProcessing++
 			}
 			return true
 		})
