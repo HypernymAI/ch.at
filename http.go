@@ -216,12 +216,13 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		if wantsHTML {
 			promptToUse = htmlPromptPrefix + prompt
 		}
-		response, err := LLM(promptToUse, nil)
+		llmResp, err := LLM(promptToUse, nil)
 		if err != nil {
 			content = err.Error()
 			errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
 			jsonResponse = string(errJSON)
 		} else {
+			response := llmResp.Content
 			respJSON, _ := json.Marshal(map[string]string{
 				"question": query,
 				"answer":   response,
@@ -397,11 +398,12 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 
 	} else {
-		response, err := LLM(messages, nil)
+		llmResp, err := LLM(messages, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		response := llmResp.Content
 
 		chatResp := ChatResponse{
 			ID:      fmt.Sprintf("chatcmpl-%d", time.Now().Unix()),

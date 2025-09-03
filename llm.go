@@ -40,27 +40,9 @@ func loadLLMConfig() {
 	}
 }
 
-// LLM calls the language model. If stream is nil, returns complete response via return value.
-// If stream is provided, streams response chunks to channel and returns empty string.
-// Input can be a string (wrapped as user message) or []map[string]string for full message history.
-func LLM(input interface{}, stream chan<- string) (string, error) {
-
-// generateSignature creates a hash signature for content
-func generateSignature(content string) string {
-	hash := sha256.Sum256([]byte(content))
-	return fmt.Sprintf("%x", hash)[:16] // First 16 chars of hash
-}
-
-// LLMResponse contains the response and metadata from an LLM call
+// LLMResponse contains the response from an LLM call
 type LLMResponse struct {
-	Content         string
-	InputTokens     int
-	OutputTokens    int
-	InputHash       string
-	OutputHash      string
-	Model           string
-	FinishReason    string
-	ContentFiltered bool
+	Content string
 }
 
 // LLM calls the language model. If stream is nil, returns complete response via return value.
@@ -84,6 +66,8 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 		}
 	}
 	
+	response := &LLMResponse{}
+	
 	// Build messages array
 	var messages []map[string]string
 	switch v := input.(type) {
@@ -94,7 +78,7 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 	case []map[string]string:
 		messages = v
 	default:
-		return "", fmt.Errorf("invalid input type")
+		return nil, fmt.Errorf("invalid input type")
 	}
 
 	// Build request
@@ -112,7 +96,7 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 
 	jsonBody, err := json.Marshal(requestBody)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	// Double-check apiURL is set
@@ -140,7 +124,7 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 		if debugMode {
 			log.Printf("[LLM] Failed to create request: %v", err)
 		}
-		return "", err
+		return nil, err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
@@ -151,24 +135,27 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 	client := &http.Client{}
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return "", fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
+		return nil, fmt.Errorf("API error (status %d): %s", resp.StatusCode, string(body))
 	}
 
 	// Handle streaming response
 	if stream != nil {
 		scanner := bufio.NewScanner(resp.Body)
+		var outputBuilder strings.Builder
+		
 		for scanner.Scan() {
 			line := scanner.Text()
 			if strings.HasPrefix(line, "data: ") {
 				data := strings.TrimPrefix(line, "data: ")
 				if data == "[DONE]" {
-					return "", nil
+					response.Content = outputBuilder.String()
+					return response, nil
 				}
 
 				var chunk map[string]interface{}
@@ -177,6 +164,7 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 						if choice, ok := choices[0].(map[string]interface{}); ok {
 							if delta, ok := choice["delta"].(map[string]interface{}); ok {
 								if content, ok := delta["content"].(string); ok {
+									outputBuilder.WriteString(content)
 									stream <- content
 								}
 							}
@@ -185,29 +173,29 @@ func LLM(input interface{}, stream chan<- string) (*LLMResponse, error) {
 				}
 			}
 		}
-		return "", scanner.Err()
+		return response, scanner.Err()
 	}
 
 	// Handle non-streaming response
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
-	var response map[string]interface{}
-	if err := json.Unmarshal(body, &response); err != nil {
-		return "", err
+	var apiResponse map[string]interface{}
+	if err := json.Unmarshal(body, &apiResponse); err != nil {
+		return nil, err
 	}
 
-	if choices, ok := response["choices"].([]interface{}); ok && len(choices) > 0 {
+	if choices, ok := apiResponse["choices"].([]interface{}); ok && len(choices) > 0 {
 		if choice, ok := choices[0].(map[string]interface{}); ok {
 			if message, ok := choice["message"].(map[string]interface{}); ok {
 				if content, ok := message["content"].(string); ok {
-					return content, nil
+					response.Content = content
 				}
 			}
 		}
 	}
-
-	return "", fmt.Errorf("unexpected response format")
+	
+	return response, nil
 }
