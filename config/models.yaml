@@ -1,0 +1,230 @@
+models:
+  # Llama Models
+  llama-8b:
+    name: "Llama 3 8B"
+    family: "llama"
+    version: "3.0"
+    capabilities:
+      max_tokens: 8192
+      context_window: 8192
+      supports_vision: false
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 150
+      input_cost: 0.0002
+      output_cost: 0.0006
+      tokenizer_type: "llama"
+      languages: ["en", "es", "fr", "de", "zh", "ja", "ko", "ar", "ru", "pt"]
+    deployments:
+      - llama-8b-oneapi-azure
+      - llama-8b-oneapi-bedrock
+      - llama-8b-oneapi-vertex
+    tags:
+      tier: "standard"
+      use_case: "general"
+
+  llama-70b:
+    name: "Llama 3 70B"
+    family: "llama"
+    version: "3.0"
+    capabilities:
+      max_tokens: 8192
+      context_window: 8192
+      supports_vision: false
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 50
+      input_cost: 0.001
+      output_cost: 0.003
+      tokenizer_type: "llama"
+      languages: ["en", "es", "fr", "de", "zh", "ja", "ko", "ar", "ru", "pt"]
+    deployments:
+      - llama-70b-oneapi-azure
+      - llama-70b-oneapi-bedrock
+      - llama-70b-oneapi-vertex
+    tags:
+      tier: "premium"
+      use_case: "complex"
+
+  # GPT Models
+  gpt-4:
+    name: "GPT-4"
+    family: "gpt"
+    version: "4.0"
+    capabilities:
+      max_tokens: 8192
+      context_window: 128000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 40
+      input_cost: 0.03
+      output_cost: 0.06
+      tokenizer_type: "cl100k"
+      languages: ["all"]
+    deployments:
+      - gpt-4-oneapi-azure
+      - gpt-4-oneapi-openai
+    tags:
+      tier: "premium"
+      use_case: "complex"
+
+  gpt-4-turbo:
+    name: "GPT-4 Turbo"
+    family: "gpt"
+    version: "4.0-turbo"
+    capabilities:
+      max_tokens: 4096
+      context_window: 128000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 60
+      input_cost: 0.01
+      output_cost: 0.03
+      tokenizer_type: "cl100k"
+      languages: ["all"]
+    deployments:
+      - gpt-4-turbo-oneapi-azure
+      - gpt-4-turbo-oneapi-openai
+    tags:
+      tier: "premium"
+      use_case: "fast-complex"
+
+  gpt-3.5-turbo:
+    name: "GPT-3.5 Turbo"
+    family: "gpt"
+    version: "3.5-turbo"
+    capabilities:
+      max_tokens: 4096
+      context_window: 16385
+      supports_vision: false
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 100
+      input_cost: 0.0005
+      output_cost: 0.0015
+      tokenizer_type: "cl100k"
+      languages: ["all"]
+    deployments:
+      - gpt-35-turbo-oneapi-azure
+      - gpt-35-turbo-oneapi-openai
+    tags:
+      tier: "standard"
+      use_case: "general"
+
+  # Claude Models
+  claude-4-1-opus:
+    name: "Claude 4.1 Opus"
+    family: "claude"
+    version: "4.1"
+    capabilities:
+      max_tokens: 8192
+      context_window: 200000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments: []
+    tags:
+      tier: "frontier"
+      
+  claude-3-opus:
+    name: "Claude 3 Opus"
+    family: "claude"
+    version: "3.0-opus"
+    capabilities:
+      max_tokens: 4096
+      context_window: 200000
+      supports_vision: true
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 30
+      input_cost: 0.015
+      output_cost: 0.075
+      tokenizer_type: "claude"
+      languages: ["all"]
+    deployments:
+      - claude-3-opus-oneapi-anthropic
+      - claude-3-opus-oneapi-bedrock
+      - claude-3-opus-oneapi-vertex
+    tags:
+      tier: "premium"
+      use_case: "analysis"
+
+  claude-3-sonnet:
+    name: "Claude 3 Sonnet"
+    family: "claude"
+    version: "3.0-sonnet"
+    capabilities:
+      max_tokens: 4096
+      context_window: 200000
+      supports_vision: true
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 50
+      input_cost: 0.003
+      output_cost: 0.015
+      tokenizer_type: "claude"
+      languages: ["all"]
+    deployments:
+      - claude-3-sonnet-oneapi-anthropic
+      - claude-3-sonnet-oneapi-bedrock
+      - claude-3-sonnet-oneapi-vertex
+    tags:
+      tier: "standard"
+      use_case: "balanced"
+
+  claude-3-haiku:
+    name: "Claude 3 Haiku"
+    family: "claude"
+    version: "3.0-haiku"
+    capabilities:
+      max_tokens: 4096
+      context_window: 200000
+      supports_vision: true
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 100
+      input_cost: 0.00025
+      output_cost: 0.00125
+      tokenizer_type: "claude"
+      languages: ["all"]
+    deployments:
+      - claude-3-haiku-oneapi-anthropic
+      - claude-3-haiku-oneapi-bedrock
+    tags:
+      tier: "economy"
+      use_case: "fast"
+
+  # Mixtral Models
+  mixtral-8x7b:
+    name: "Mixtral 8x7B"
+    family: "mixtral"
+    version: "8x7b"
+    capabilities:
+      max_tokens: 32768
+      context_window: 32768
+      supports_vision: false
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 80
+      input_cost: 0.0002
+      output_cost: 0.0006
+      tokenizer_type: "mistral"
+      languages: ["en", "es", "fr", "de", "it"]
+    deployments:
+      - mixtral-8x7b-oneapi-local
+      - mixtral-8x7b-oneapi-bedrock
+    tags:
+      tier: "standard"
+      use_case: "general"

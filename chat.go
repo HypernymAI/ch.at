@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"log"
+	"os"
 )
 
 // Note: Port configuration has moved to config.go
@@ -13,6 +15,24 @@ func main() {
 	// Parse command line flags
 	flag.BoolVar(&debugMode, "debug", false, "Enable debug logging")
 	flag.Parse()
+	
+	// Initialize model router (non-blocking, falls back to legacy if fails)
+	if err := InitializeModelRouter(); err != nil {
+		log.Printf("Model router initialization failed: %v", err)
+		log.Println("Using legacy LLM mode")
+	}
+	
+	// Beacon application startup
+	beacon("chat_startup", map[string]interface{}{
+		"http_port":  HTTP_PORT,
+		"https_port": HTTPS_PORT,
+		"ssh_port":   SSH_PORT,
+		"dns_port":   DNS_PORT,
+		"high_port_mode": os.Getenv("HIGH_PORT_MODE") == "true",
+		"debug_mode": debugMode,
+		"router_enabled": modelRouter != nil,
+	})
+
 	// SSH Server
 	if SSH_PORT > 0 {
 		go func() {
@@ -32,7 +52,14 @@ func main() {
 	if HTTP_PORT > 0 || HTTPS_PORT > 0 {
 		if HTTPS_PORT > 0 {
 			go func() {
-				StartHTTPSServer(HTTPS_PORT, "cert.pem", "key.pem")
+				certPath, keyPath, found := findSSLCertificates()
+				if !found {
+					log.Printf("WARNING: SSL certificates not found, HTTPS disabled")
+					log.Printf("Expected cert.pem and key.pem in working directory")
+					log.Printf("Or valid Let's Encrypt certificates")
+					return
+				}
+				StartHTTPSServer(HTTPS_PORT, certPath, keyPath)
 			}()
 		}
 

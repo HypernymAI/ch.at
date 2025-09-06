@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -59,6 +60,13 @@ const htmlFooterTemplate = `</div>
 func StartHTTPServer(port int) error {
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/v1/chat/completions", handleChatCompletions)
+	http.HandleFunc("/health", handleHealth)
+	
+	// Model management endpoints
+	http.HandleFunc("/v1/models", handleListModels)
+	http.HandleFunc("/v1/models/", handleGetModel)
+	http.HandleFunc("/v1/deployments", handleListDeployments)
+	http.HandleFunc("/v1/deployments/", handleGetDeployment)
 
 	addr := fmt.Sprintf(":%d", port)
 	return http.ListenAndServe(addr, nil)
@@ -362,6 +370,22 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Determine which LLM function to use
+	var llmFunc func(interface{}, chan<- string) (*LLMResponse, error)
+	
+	// Check if router is available and model is specified
+	if modelRouter != nil && req.Model != "" {
+		log.Printf("[handleChatCompletions] Using router for model: %s", req.Model)
+		// Use new router
+		llmFunc = func(input interface{}, stream chan<- string) (*LLMResponse, error) {
+			return LLMWithRouter(input, req.Model, stream)
+		}
+	} else {
+		log.Printf("[handleChatCompletions] Falling back to legacy LLM (router=%v, model=%s)", modelRouter != nil, req.Model)
+		// Fall back to legacy LLM
+		llmFunc = LLM
+	}
+
 	if req.Stream {
 		w.Header().Set("Content-Type", "text/event-stream")
 		w.Header().Set("Cache-Control", "no-cache")
@@ -374,7 +398,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		}
 
 		ch := make(chan string)
-		go LLM(messages, ch)
+		go llmFunc(messages, ch)
 
 		for chunk := range ch {
 			resp := map[string]interface{}{
@@ -398,7 +422,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "data: [DONE]\n\n")
 
 	} else {
-		llmResp, err := LLM(messages, nil)
+		llmResp, err := llmFunc(messages, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
