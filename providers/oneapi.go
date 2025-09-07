@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -188,24 +189,52 @@ func (o *OneAPIProvider) Stream(ctx context.Context, req *ProviderRequest, strea
 	}
 	defer resp.Body.Close()
 
-	// Parse SSE stream
-	decoder := json.NewDecoder(resp.Body)
-	for {
-		var chunk json.RawMessage
-		if err := decoder.Decode(&chunk); err != nil {
-			if err.Error() == "EOF" {
+	// Parse SSE stream (Server-Sent Events format)
+	scanner := bufio.NewScanner(resp.Body)
+	for scanner.Scan() {
+		line := scanner.Text()
+		
+		// SSE lines start with "data: "
+		if strings.HasPrefix(line, "data: ") {
+			data := strings.TrimPrefix(line, "data: ")
+			
+			// Check for stream end
+			if data == "[DONE]" {
 				stream <- StreamChunk{Done: true}
 				return nil
 			}
-			stream <- StreamChunk{Error: err}
-			return err
-		}
-
-		stream <- StreamChunk{
-			Data: string(chunk),
-			Done: false,
+			
+			// Parse the JSON to extract content
+			var chunk map[string]interface{}
+			if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+				// Skip malformed JSON
+				continue
+			}
+			
+			// Extract the actual content from the chunk
+			// Format: {"choices": [{"delta": {"content": "text"}}]}
+			if choices, ok := chunk["choices"].([]interface{}); ok && len(choices) > 0 {
+				if choice, ok := choices[0].(map[string]interface{}); ok {
+					if delta, ok := choice["delta"].(map[string]interface{}); ok {
+						if content, ok := delta["content"].(string); ok && content != "" {
+							// Send ONLY the actual text content
+							stream <- StreamChunk{
+								Data: content,
+								Done: false,
+							}
+						}
+					}
+				}
+			}
 		}
 	}
+	
+	if err := scanner.Err(); err != nil {
+		stream <- StreamChunk{Error: err}
+		return err
+	}
+	
+	return nil
 }
 
 // ValidateConfig validates OneAPI deployment configuration

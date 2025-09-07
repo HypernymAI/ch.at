@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math/rand"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,7 +26,9 @@ type Router struct {
 	// Runtime state
 	mu              sync.RWMutex
 	roundRobinIndex map[string]int
+	lastIndex       int // For tier-based round-robin
 	healthChecker   *HealthChecker
+	healthCheckers  map[string]*HealthChecker
 
 	// Circuit breakers
 	circuitBreakers map[string]*CircuitBreaker
@@ -88,6 +91,12 @@ func (r *Router) RouteRequest(ctx context.Context, modelID string, reqCtx *Reque
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 
+	// Check if this is a tier-based request
+	if strings.HasPrefix(modelID, "tier:") {
+		tier := strings.TrimPrefix(modelID, "tier:")
+		return r.routeByTier(ctx, tier, reqCtx)
+	}
+
 	// Get model
 	model, exists := r.models[modelID]
 	if !exists {
@@ -130,6 +139,52 @@ func (r *Router) RouteRequest(ctx context.Context, modelID string, reqCtx *Reque
 		Metadata: map[string]interface{}{
 			"total_deployments":     len(model.Deployments),
 			"available_deployments": len(availableDeployments),
+		},
+	}, nil
+}
+
+// routeByTier routes a request based on tier preference
+func (r *Router) routeByTier(ctx context.Context, tier string, reqCtx *RequestContext) (*RoutingDecision, error) {
+	// Find all deployments with the requested tier
+	var tierDeployments []*models.Deployment
+	for _, deployment := range r.deployments {
+		if deployment.Tags != nil && deployment.Tags["tier"] == tier {
+			// Check if deployment is healthy
+			if cb, exists := r.circuitBreakers[deployment.ID]; exists && !cb.Allow() {
+				continue
+			}
+			// Check deployment health status
+			if !deployment.Status.Available || deployment.Status.ConsecutiveFails >= 3 {
+				continue
+			}
+			tierDeployments = append(tierDeployments, deployment)
+		}
+	}
+
+	if len(tierDeployments) == 0 {
+		return nil, fmt.Errorf("no available deployments for tier: %s", tier)
+	}
+
+	// Select deployment based on strategy (default to round-robin for tier selection)
+	var selected *models.Deployment
+	
+	// Simple round-robin selection
+	if r.lastIndex >= len(tierDeployments) {
+		r.lastIndex = 0
+	}
+	selected = tierDeployments[r.lastIndex]
+	r.lastIndex++
+
+	// Create routing decision
+	return &RoutingDecision{
+		RequestID: reqCtx.RequestID,
+		ModelID:   "tier:" + tier,
+		Primary:   selected,
+		Strategy:  r.strategy,
+		Timestamp: time.Now(),
+		Metadata: map[string]interface{}{
+			"tier": tier,
+			"total_tier_deployments": len(tierDeployments),
 		},
 	}, nil
 }

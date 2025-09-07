@@ -7,11 +7,62 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
 const htmlPromptPrefix = "You are a helpful assistant. Use HTML formatting instead of markdown (no CSS or style attributes): "
+
+// RequestTelemetry holds comprehensive telemetry data for a request
+type RequestTelemetry struct {
+	RequestID       string
+	Method          string
+	Path            string
+	UserAgent       string
+	RemoteAddr      string
+	Query           string
+	InputHash       string
+	OutputHash      string
+	InputTokens     int
+	OutputTokens    int
+	Model           string
+	FinishReason    string
+	ContentFiltered bool
+	ResponseType    string
+	Status          int
+	StartTime       time.Time
+	Duration        time.Duration
+}
+
+// isBrowserUA checks if the user agent appears to be from a web browser
+func isBrowserUA(ua string) bool {
+	ua = strings.ToLower(ua)
+	browserIndicators := []string{
+		"mozilla", "msie", "trident", "edge", "chrome", "safari", 
+		"firefox", "opera", "webkit", "gecko", "khtml",
+	}
+	for _, indicator := range browserIndicators {
+		if strings.Contains(ua, indicator) {
+			return true
+		}
+	}
+	return false
+}
+
+// tierToModel maps tier names to model selection tags for the router
+func tierToModel(tier string) string {
+	// The router will select models based on tier tags
+	// We use special model names that the router recognizes as tier selectors
+	switch tier {
+	case "fast":
+		return "tier:fast"
+	case "frontier":
+		return "tier:frontier"
+	default:
+		return "tier:balanced"
+	}
+}
 
 const htmlHeader = `<!DOCTYPE html>
 <html>
@@ -23,9 +74,13 @@ const htmlHeader = `<!DOCTYPE html>
         .chat { text-align: left; max-width: 600px; margin: 1.25rem auto; }
         .q { padding: 1.25rem; background: #EEE; font-style: italic; font-size: large; }
         .a { padding: 0.5rem 1.25rem; }
-        form { max-width: 568px; margin: 0 auto 3rem; display: flex; gap: .5rem; }
+        form { max-width: 568px; margin: 0 auto 3rem; }
+        .input-row { display: flex; gap: .5rem; margin-bottom: .5rem; }
         input[type="text"] { width: 100%; padding: .5rem; }
         input[type="submit"] { padding: .5rem; }
+        .tier-selection { display: flex; gap: 1rem; justify-content: center; font-size: 0.9rem; }
+        .tier-selection label { cursor: pointer; }
+        .tier-selection input[type="radio"] { cursor: pointer; }
 		@media (prefers-color-scheme: dark) {
 			body { background: #181a1b; color: #e8e6e3; }
 			.chat { background: #222326; }
@@ -45,8 +100,15 @@ const htmlHeader = `<!DOCTYPE html>
 
 const htmlFooterTemplate = `</div>
     <form method="POST" action="/">
-        <input type="text" name="q" placeholder="Type your message..." autofocus>
-        <input type="submit" value="Send">
+        <div class="tier-selection">
+            <label><input type="radio" name="tier" value="fast" %s> Fast</label>
+            <label><input type="radio" name="tier" value="balanced" %s> Balanced</label>
+            <label><input type="radio" name="tier" value="frontier" %s> Frontier</label>
+        </div>
+        <div class="input-row">
+            <input type="text" name="q" placeholder="Type your message..." autofocus>
+            <input type="submit" value="Send">
+        </div>
         <textarea name="h" style="display:none">%s</textarea>
     </form>
     <p><a href="/">New Chat</a></p>
@@ -78,13 +140,35 @@ func StartHTTPSServer(port int, certFile, keyFile string) error {
 }
 
 func handleRoot(w http.ResponseWriter, r *http.Request) {
+	// Initialize telemetry
+	telemetry := &RequestTelemetry{
+		RequestID:   generateRequestID(),
+		Method:      r.Method,
+		Path:        r.URL.Path,
+		RemoteAddr:  r.RemoteAddr,
+		UserAgent:   r.Header.Get("User-Agent"),
+		StartTime:   time.Now(),
+	}
+	
+	// Beacon request start
+	beacon("request_start", map[string]interface{}{
+		"request_id": telemetry.RequestID,
+		"method":     telemetry.Method,
+		"path":       telemetry.Path,
+		"remote_addr": telemetry.RemoteAddr,
+		"user_agent": telemetry.UserAgent,
+	})
+
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	if !rateLimitAllow(r.RemoteAddr) {
+		beacon("rate_limit_exceeded", map[string]interface{}{
+			"remote_addr": r.RemoteAddr,
+		})
 		http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
 		return
 	}
 
-	var query, history, prompt string
+	var query, history, prompt, tier string
 	content := ""
 	jsonResponse := ""
 
@@ -95,6 +179,12 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		}
 		query = r.FormValue("q")
 		history = r.FormValue("h")
+		tier = r.FormValue("tier")
+		
+		// Default to balanced tier if not specified
+		if tier == "" {
+			tier = "balanced"
+		}
 
 		// Limit history size to ensure compatibility
 		if len(history) > 65536 {
@@ -118,8 +208,9 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accept := r.Header.Get("Accept")
+	userAgent := strings.ToLower(r.Header.Get("User-Agent"))
 	wantsJSON := strings.Contains(accept, "application/json")
-	wantsHTML := strings.Contains(accept, "text/html")
+	wantsHTML := isBrowserUA(userAgent) || strings.Contains(accept, "text/html")
 	wantsStream := strings.Contains(accept, "text/event-stream")
 
 	if query != "" {
@@ -133,6 +224,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Transfer-Encoding", "chunked")
 			w.Header().Set("X-Accel-Buffering", "no")
 			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'")
 			flusher := w.(http.Flusher)
 
 			headerSize := len(htmlHeader)
@@ -160,6 +252,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 						answer := part[i+4:]
 						answer = strings.TrimRight(answer, "\n")
 						fmt.Fprintf(w, "<div class=\"q\">%s</div>\n", html.EscapeString(question))
+						// History answers contain HTML, render them as-is
 						fmt.Fprintf(w, "<div class=\"a\">%s</div>\n", answer)
 					}
 				}
@@ -168,31 +261,95 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 
 			ch := make(chan string)
+			var llmResp *LLMResponse
 			go func() {
 				htmlPrompt := htmlPromptPrefix + prompt
-			if _, err := LLM(htmlPrompt, ch); err != nil {
-					ch <- err.Error()
-					close(ch)
+				var resp *LLMResponse
+				var err error
+				
+				// Use router if available with tier selection
+				if modelRouter != nil {
+					resp, err = LLMWithRouter(htmlPrompt, tierToModel(tier), ch)
+				} else {
+					resp, err = LLM(htmlPrompt, ch)
+				}
+				if err != nil {
+					// Log the error but don't try to send it
+					// The channel is managed by LLM/LLMWithRouter
+					log.Printf("LLM error: %v", err)
+				} else {
+					llmResp = resp
 				}
 			}()
 
 			response := ""
 			for chunk := range ch {
+				// Don't escape HTML since we asked for HTML format
 				if _, err := fmt.Fprint(w, chunk); err != nil {
 					return
 				}
 				response += chunk
 				flusher.Flush()
 			}
+			
+			// Update telemetry with LLM response data if available
+			if llmResp != nil {
+				telemetry.InputHash = llmResp.InputHash
+				telemetry.OutputHash = llmResp.OutputHash
+				telemetry.InputTokens = llmResp.InputTokens
+				telemetry.OutputTokens = llmResp.OutputTokens
+				telemetry.Model = llmResp.Model
+				telemetry.FinishReason = llmResp.FinishReason
+				telemetry.ContentFiltered = llmResp.ContentFiltered
+			}
 			fmt.Fprint(w, "</div>\n")
 
+			// Keep the full HTML response in history for consistent rendering
 			finalHistory := history + fmt.Sprintf("Q: %s\nA: %s\n\n", query, response)
-			fmt.Fprintf(w, htmlFooterTemplate, html.EscapeString(finalHistory))
+			// Format the radio buttons with current tier selection
+			fastChecked := ""
+			balancedChecked := "checked"
+			frontierChecked := ""
+			if tier == "fast" {
+				fastChecked = "checked"
+				balancedChecked = ""
+			} else if tier == "frontier" {
+				frontierChecked = "checked"
+				balancedChecked = ""
+			}
+			// Escape only the minimal necessary for textarea safety
+			// Replace </textarea> to prevent breaking out of the textarea
+			safeHistory := strings.ReplaceAll(finalHistory, "</textarea>", "&lt;/textarea&gt;")
+			fmt.Fprintf(w, htmlFooterTemplate, fastChecked, balancedChecked, frontierChecked, safeHistory)
+			
+			// Calculate final telemetry
+			telemetry.Duration = time.Since(telemetry.StartTime)
+			telemetry.Status = 200
+			telemetry.Query = query
+			telemetry.ResponseType = "html_stream"
+			
+			// Beacon comprehensive request telemetry
+			beacon("request_complete", map[string]interface{}{
+				"request_id":       telemetry.RequestID,
+				"status":           telemetry.Status,
+				"duration_ms":      telemetry.Duration.Milliseconds(),
+				"has_query":        true,
+				"query_hash":       generateSignature(query),
+				"response_type":    telemetry.ResponseType,
+				"input_hash":       telemetry.InputHash,
+				"output_hash":      telemetry.OutputHash,
+				"input_tokens":     telemetry.InputTokens,
+				"output_tokens":    telemetry.OutputTokens,
+				"total_tokens":     telemetry.InputTokens + telemetry.OutputTokens,
+				"model":            telemetry.Model,
+				"finish_reason":    telemetry.FinishReason,
+				"content_filtered": telemetry.ContentFiltered,
+			})
 			return
 		}
 
-		userAgent := r.Header.Get("User-Agent")
-		isCurl := strings.Contains(userAgent, "curl") && !wantsHTML && !wantsJSON && !wantsStream
+		// More strict curl detection: only exact match or curl/ prefix
+		isCurl := (userAgent == "curl" || strings.HasPrefix(userAgent, "curl/")) && !wantsHTML && !wantsJSON && !wantsStream
 		if isCurl {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.Header().Set("Transfer-Encoding", "chunked")
@@ -203,10 +360,23 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 
 			ch := make(chan string)
+			var llmResp *LLMResponse
 			go func() {
-				if _, err := LLM(prompt, ch); err != nil {
-					ch <- err.Error()
-					close(ch)
+				var resp *LLMResponse
+				var err error
+				
+				// Use router if available with tier selection
+				if modelRouter != nil {
+					resp, err = LLMWithRouter(prompt, tierToModel(tier), ch)
+				} else {
+					resp, err = LLM(prompt, ch)
+				}
+				if err != nil {
+					// Log the error but don't try to send it
+					// The channel is managed by LLM/LLMWithRouter
+					log.Printf("LLM error: %v", err)
+				} else {
+					llmResp = resp
 				}
 			}()
 
@@ -216,7 +386,42 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				response += chunk
 				flusher.Flush()
 			}
+			
+			// Update telemetry with LLM response data if available
+			if llmResp != nil {
+				telemetry.InputHash = llmResp.InputHash
+				telemetry.OutputHash = llmResp.OutputHash
+				telemetry.InputTokens = llmResp.InputTokens
+				telemetry.OutputTokens = llmResp.OutputTokens
+				telemetry.Model = llmResp.Model
+				telemetry.FinishReason = llmResp.FinishReason
+				telemetry.ContentFiltered = llmResp.ContentFiltered
+			}
 			fmt.Fprint(w, "\n")
+			
+			// Calculate final telemetry
+			telemetry.Duration = time.Since(telemetry.StartTime)
+			telemetry.Status = 200
+			telemetry.Query = query
+			telemetry.ResponseType = "curl"
+			
+			// Beacon comprehensive request telemetry
+			beacon("request_complete", map[string]interface{}{
+				"request_id":       telemetry.RequestID,
+				"status":           telemetry.Status,
+				"duration_ms":      telemetry.Duration.Milliseconds(),
+				"has_query":        true,
+				"query_hash":       generateSignature(query),
+				"response_type":    telemetry.ResponseType,
+				"input_hash":       telemetry.InputHash,
+				"output_hash":      telemetry.OutputHash,
+				"input_tokens":     telemetry.InputTokens,
+				"output_tokens":    telemetry.OutputTokens,
+				"total_tokens":     telemetry.InputTokens + telemetry.OutputTokens,
+				"model":            telemetry.Model,
+				"finish_reason":    telemetry.FinishReason,
+				"content_filtered": telemetry.ContentFiltered,
+			})
 			return
 		}
 
@@ -224,20 +429,37 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		if wantsHTML {
 			promptToUse = htmlPromptPrefix + prompt
 		}
-		llmResp, err := LLM(promptToUse, nil)
+		
+		var llmResp *LLMResponse
+		var err error
+		
+		// Use router if available with tier selection
+		if modelRouter != nil {
+			llmResp, err = LLMWithRouter(promptToUse, tierToModel(tier), nil)
+		} else {
+			llmResp, err = LLM(promptToUse, nil)
+		}
 		if err != nil {
 			content = err.Error()
 			errJSON, _ := json.Marshal(map[string]string{"error": err.Error()})
 			jsonResponse = string(errJSON)
 		} else {
-			response := llmResp.Content
+			// Update telemetry with LLM response data
+			telemetry.InputHash = llmResp.InputHash
+			telemetry.OutputHash = llmResp.OutputHash
+			telemetry.InputTokens = llmResp.InputTokens
+			telemetry.OutputTokens = llmResp.OutputTokens
+			telemetry.Model = llmResp.Model
+			telemetry.FinishReason = llmResp.FinishReason
+			telemetry.ContentFiltered = llmResp.ContentFiltered
+			
 			respJSON, _ := json.Marshal(map[string]string{
 				"question": query,
-				"answer":   response,
+				"answer":   llmResp.Content,
 			})
 			jsonResponse = string(respJSON)
 
-			newExchange := fmt.Sprintf("Q: %s\nA: %s\n\n", query, response)
+			newExchange := fmt.Sprintf("Q: %s\nA: %s\n\n", query, llmResp.Content)
 			if history != "" {
 				content = history + newExchange
 			} else {
@@ -271,10 +493,22 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		}
 
 		ch := make(chan string)
+		var llmResp *LLMResponse
 		go func() {
-			if _, err := LLM(prompt, ch); err != nil {
+			var resp *LLMResponse
+			var err error
+			
+			// Use router if available with tier selection
+			if modelRouter != nil {
+				resp, err = LLMWithRouter(prompt, tierToModel(tier), ch)
+			} else {
+				resp, err = LLM(prompt, ch)
+			}
+			if err != nil {
 				fmt.Fprintf(w, "data: Error: %s\n\n", err.Error())
 				flusher.Flush()
+			} else {
+				llmResp = resp
 			}
 		}()
 
@@ -282,7 +516,42 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "data: %s\n\n", chunk)
 			flusher.Flush()
 		}
+		
+		// Update telemetry with LLM response data if available
+		if llmResp != nil {
+			telemetry.InputHash = llmResp.InputHash
+			telemetry.OutputHash = llmResp.OutputHash
+			telemetry.InputTokens = llmResp.InputTokens
+			telemetry.OutputTokens = llmResp.OutputTokens
+			telemetry.Model = llmResp.Model
+			telemetry.FinishReason = llmResp.FinishReason
+			telemetry.ContentFiltered = llmResp.ContentFiltered
+		}
 		fmt.Fprintf(w, "data: [DONE]\n\n")
+		
+		// Calculate final telemetry
+		telemetry.Duration = time.Since(telemetry.StartTime)
+		telemetry.Status = 200
+		telemetry.Query = query
+		telemetry.ResponseType = "event-stream"
+		
+		// Note: For streaming, we don't have token counts unless we track the response
+		beacon("request_complete", map[string]interface{}{
+			"request_id":       telemetry.RequestID,
+			"status":           telemetry.Status,
+			"duration_ms":      telemetry.Duration.Milliseconds(),
+			"has_query":        true,
+			"query_hash":       generateSignature(query),
+			"response_type":    telemetry.ResponseType,
+			"input_hash":       telemetry.InputHash,
+			"output_hash":      telemetry.OutputHash,
+			"input_tokens":     telemetry.InputTokens,
+			"output_tokens":    telemetry.OutputTokens,
+			"total_tokens":     telemetry.InputTokens + telemetry.OutputTokens,
+			"model":            telemetry.Model,
+			"finish_reason":    telemetry.FinishReason,
+			"content_filtered": telemetry.ContentFiltered,
+		})
 		return
 	}
 
@@ -291,6 +560,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, jsonResponse)
 	} else if wantsHTML && query == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'")
 		fmt.Fprint(w, htmlHeader)
 		parts := strings.Split("\n"+content, "\nQ: ")
 		for _, part := range parts[1:] {
@@ -303,11 +573,43 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		fmt.Fprintf(w, htmlFooterTemplate, html.EscapeString(content))
+		// Default tier selection for initial page load
+		// Escape only </textarea> to prevent breaking out
+		safeContent := strings.ReplaceAll(content, "</textarea>", "&lt;/textarea&gt;")
+		fmt.Fprintf(w, htmlFooterTemplate, "", "checked", "", safeContent)
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		fmt.Fprint(w, content)
 	}
+	
+	// Calculate final telemetry
+	telemetry.Duration = time.Since(telemetry.StartTime)
+	telemetry.Status = 200
+	telemetry.Query = query
+	telemetry.ResponseType = func() string {
+		if wantsJSON { return "json" }
+		if wantsHTML { return "html" }
+		if wantsStream { return "stream" }
+		return "plain"
+	}()
+	
+	// Beacon comprehensive request telemetry
+	beacon("request_complete", map[string]interface{}{
+		"request_id":       telemetry.RequestID,
+		"status":           telemetry.Status,
+		"duration_ms":      telemetry.Duration.Milliseconds(),
+		"has_query":        query != "",
+		"query_hash":       generateInputSignature(query),
+		"response_type":    telemetry.ResponseType,
+		"input_hash":       telemetry.InputHash,
+		"output_hash":      telemetry.OutputHash,
+		"input_tokens":     telemetry.InputTokens,
+		"output_tokens":    telemetry.OutputTokens,
+		"total_tokens":     telemetry.InputTokens + telemetry.OutputTokens,
+		"model":            telemetry.Model,
+		"finish_reason":    telemetry.FinishReason,
+		"content_filtered": telemetry.ContentFiltered,
+	})
 }
 
 type ChatRequest struct {
@@ -330,8 +632,9 @@ type ChatResponse struct {
 }
 
 type Choice struct {
-	Index   int     `json:"index"`
-	Message Message `json:"message"`
+	Index        int     `json:"index"`
+	Message      Message `json:"message"`
+	FinishReason string  `json:"finish_reason,omitempty"`
 }
 
 func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -363,11 +666,43 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	}
 
 	messages := make([]map[string]string, len(req.Messages))
+	var fullContent string
 	for i, msg := range req.Messages {
 		messages[i] = map[string]string{
 			"role":    msg.Role,
 			"content": msg.Content,
 		}
+		fullContent += msg.Content + " "
+	}
+	
+	// Use discriminator to analyze and potentially route to specialized modules
+	if discriminator != nil {
+		moduleResponse, err := discriminator.Process(fullContent, messages)
+		if err != nil {
+			log.Printf("[handleChatCompletions] Module processing error: %v", err)
+			// Fall through to default processing
+		} else if moduleResponse != "" {
+			// Module handled the request
+			resp := ChatResponse{
+				ID:      "chatcmpl-module-" + generateRequestID(),
+				Object:  "chat.completion",
+				Created: time.Now().Unix(),
+				Model:   req.Model,
+				Choices: []Choice{{
+					Index: 0,
+					Message: Message{
+						Role:    "assistant",
+						Content: moduleResponse,
+					},
+					FinishReason: "stop",
+				}},
+			}
+			
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(resp)
+			return
+		}
+		// If moduleResponse is empty, fall through to default processing
 	}
 
 	// Determine which LLM function to use
@@ -427,7 +762,6 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		response := llmResp.Content
 
 		chatResp := ChatResponse{
 			ID:      fmt.Sprintf("chatcmpl-%d", time.Now().Unix()),
@@ -438,7 +772,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 				Index: 0,
 				Message: Message{
 					Role:    "assistant",
-					Content: response,
+					Content: llmResp.Content,
 				},
 			}},
 		}
@@ -446,4 +780,50 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chatResp)
 	}
+}
+
+// handleHealth provides a health check endpoint
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	health := map[string]interface{}{
+		"status": "healthy",
+		"services": map[string]bool{
+			"http":  HTTP_PORT > 0,
+			"https": HTTPS_PORT > 0,
+			"ssh":   SSH_PORT > 0,
+			"dns":   DNS_PORT > 0,
+		},
+		"ports": map[string]int{
+			"http":  HTTP_PORT,
+			"https": HTTPS_PORT,
+			"ssh":   SSH_PORT,
+			"dns":   DNS_PORT,
+		},
+		"mode": "production",
+	}
+	
+	if os.Getenv("HIGH_PORT_MODE") == "true" {
+		health["mode"] = "development"
+	}
+	
+	// Check if LLM is configured
+	if apiKey != "" && apiURL != "" && modelName != "" {
+		health["llm_configured"] = true
+		health["llm_model"] = modelName
+	} else {
+		health["llm_configured"] = false
+	}
+	
+	// Check SSL certificates for HTTPS
+	if HTTPS_PORT > 0 {
+		_, _, found := findSSLCertificates()
+		health["ssl_certificates"] = found
+	}
+	
+	// Check DoNutSentry configuration
+	if donutSentryDomain != "" {
+		health["donutsentry_domain"] = donutSentryDomain
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(health)
 }
