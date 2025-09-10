@@ -101,9 +101,19 @@ func handleDoNutSentryQuery(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.
 		}
 	}
 
-	// Get LLM response
+	// Get service configuration
+	config := getServiceConfig("DONUTSENTRY")
+	
+	// Get LLM response using router
 	dnsPrompt := "Answer in 2000 characters or less, no markdown formatting: " + prompt
-	llmResp, err := LLM(dnsPrompt, nil)
+	messages := []map[string]string{
+		{"role": "user", "content": dnsPrompt},
+	}
+	params := &RouterParams{
+		MaxTokens:   config.MaxTokens,
+		Temperature: config.Temperature,
+	}
+	llmResp, err := LLMWithRouter(messages, config.Model, params, nil)
 	var responseText string
 	if err != nil {
 		responseText = "Error: " + err.Error()
@@ -330,9 +340,19 @@ func handleSessionExec(m *dns.Msg, q dns.Question, subdomain string) {
 		log.Printf("Executed session %s: reassembled %d chunks into query: %s", sessionID, totalChunks, query)
 	}
 	
-	// Get LLM response for the reassembled query
+	// Get service configuration
+	config := getServiceConfig("DONUTSENTRY")
+	
+	// Get LLM response for the reassembled query using router
 	dnsPrompt := "Answer in 2000 characters or less, no markdown formatting: " + query
-	llmResp, err := LLM(dnsPrompt, nil)
+	messages := []map[string]string{
+		{"role": "user", "content": dnsPrompt},
+	}
+	params := &RouterParams{
+		MaxTokens:   config.MaxTokens,
+		Temperature: config.Temperature,
+	}
+	llmResp, err := LLMWithRouter(messages, config.Model, params, nil)
 	var responseText string
 	if err != nil {
 		responseText = fmt.Sprintf("Error processing %d chunks: %s", totalChunks, err.Error())

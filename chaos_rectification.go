@@ -35,7 +35,7 @@ Apply the chaos rectification principles from the document above to extract acti
 	}
 	
 	// Call LLMWithRouter EXACTLY like handleChatCompletions does - with nil channel for non-streaming
-	response, err := LLMWithRouter(messages, "llama-8b", nil)
+	response, err := LLMWithRouter(messages, "llama-8b", nil, nil)
 	
 	if err != nil {
 		log.Printf("Chaos rectification error: %v", err)
@@ -44,7 +44,7 @@ Apply the chaos rectification principles from the document above to extract acti
 		// or similar. Let's use a model that's actually working.
 		
 		// Try with llama-70b which seems to be working
-		response, err = LLMWithRouter(messages, "llama-70b", nil)
+		response, err = LLMWithRouter(messages, "llama-70b", nil, nil)
 		if err != nil {
 			// If that fails too, show the actual error
 			return fmt.Sprintf("Error processing chaos with llama-70b: %v", err)

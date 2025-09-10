@@ -8,8 +8,8 @@ deployments:
   # ============================================
   
   # Claude Haiku - Ultra fast Claude
-  claude-haiku-ch2:
-    model_id: "claude-haiku"
+  claude-3.5-haiku-oneapi-anthropic:
+    model_id: "claude-3.5-haiku"
     provider: "oneapi"
     provider_model_id: "claude-3-5-haiku-20241022"
     priority: 1
@@ -26,8 +26,8 @@ deployments:
       channel: "2"
       cost_tier: "low"
 
-  # GPT-4.1 Nano - Tiny OpenAI
-  gpt-41-nano-ch8:
+  # GPT-4.1 Nano - Tiny OpenAI (Azure region)
+  gpt-4.1-nano-oneapi-azure:
     model_id: "gpt-nano"
     provider: "oneapi"
     provider_model_id: "gpt-4.1-nano"
@@ -42,14 +42,14 @@ deployments:
         type: "api_key"
     tags:
       tier: "fast"
-      channel: "8"
+      channel: "11"
       cost_tier: "low"
 
-  # Gemini 1.5 Flash - Google fast
-  gemini-flash-ch3:
+  # Gemini 2.5 Flash - Google fast
+  gemini-2.5-flash-oneapi-google:
     model_id: "gemini-flash"
     provider: "oneapi"
-    provider_model_id: "gemini-1.5-flash"
+    provider_model_id: "gemini-2.5-flash"
     priority: 1
     weight: 30
     endpoint:
@@ -65,7 +65,7 @@ deployments:
       cost_tier: "low"
 
   # Llama 3 8B - Small open model (AWS)
-  llama-8b-ch10:
+  llama-3-8b-oneapi-bedrock:
     model_id: "llama-8b"
     provider: "oneapi"
     provider_model_id: "llama-3-8b"
@@ -84,7 +84,7 @@ deployments:
       cost_tier: "low"
 
   # Llama 3.1 8B - Newer small (Azure)
-  llama-31-8b-ch4:
+  llama-3.1-8b-oneapi-azure:
     model_id: "llama-8b"
     provider: "oneapi"
     provider_model_id: "Meta-Llama-31-8B-Instruct-2"
@@ -107,8 +107,8 @@ deployments:
   # ============================================
   
   # Claude 3.7 Sonnet - Latest balanced Claude
-  claude-37-sonnet-ch2:
-    model_id: "claude-sonnet"
+  claude-3.7-sonnet-oneapi-anthropic:
+    model_id: "claude-3.7-sonnet"
     provider: "oneapi"
     provider_model_id: "claude-3-7-sonnet-20250219"
     priority: 1
@@ -126,8 +126,8 @@ deployments:
       cost_tier: "medium"
 
   # Claude 3.5 Sonnet - Proven balanced (AWS)
-  claude-35-sonnet-ch10:
-    model_id: "claude-sonnet"
+  claude-3.5-sonnet-oneapi-bedrock:
+    model_id: "claude-3.5-sonnet"
     provider: "oneapi"
     provider_model_id: "claude-3-5-sonnet-20240620"
     priority: 2
@@ -140,12 +140,12 @@ deployments:
       auth:
         type: "api_key"
     tags:
-      tier: "balanced"
       channel: "10"
+      tier: "balanced"
       cost_tier: "medium"
 
   # GPT-4.1 Mini - Balanced OpenAI
-  gpt-41-mini-ch8:
+  gpt-4.1-mini-oneapi-openai:
     model_id: "gpt-mini"
     provider: "oneapi"
     provider_model_id: "gpt-4.1-mini"
@@ -164,7 +164,7 @@ deployments:
       cost_tier: "medium"
 
   # Llama 3 70B - Large open model (AWS)
-  llama-70b-ch10:
+  llama-3-70b-oneapi-bedrock:
     model_id: "llama-70b"
     provider: "oneapi"
     provider_model_id: "llama-3-70b"
@@ -183,7 +183,7 @@ deployments:
       cost_tier: "medium"
 
   # Llama 4 Scout - Efficient 16 experts
-  llama-scout-ch10:
+  llama-4-scout-oneapi-bedrock:
     model_id: "llama-scout"
     provider: "oneapi"
     provider_model_id: "llama-4-scout-17b"
@@ -202,7 +202,7 @@ deployments:
       cost_tier: "medium"
 
   # Llama 4 Scout - Azure backup
-  llama-scout-ch4:
+  llama-4-scout-oneapi-azure:
     model_id: "llama-scout"
     provider: "oneapi"
     provider_model_id: "Llama-4-Scout-17B-16E-Instruct"
@@ -220,32 +220,14 @@ deployments:
       channel: "4"
       cost_tier: "medium"
 
-  # Gemini 2.5 Flash - Newer fast/balanced
-  gemini-25-flash-ch3:
-    model_id: "gemini-balanced"
-    provider: "oneapi"
-    provider_model_id: "gemini-2.5-flash"
-    priority: 2
-    weight: 20
-    endpoint:
-      base_url: "${ONE_API_URL:-http://localhost:3000}"
-      timeout: 30s
-      max_retries: 2
-      use_openai_format: true
-      auth:
-        type: "api_key"
-    tags:
-      tier: "balanced"
-      channel: "3"
-      cost_tier: "medium"
 
   # ============================================
   # FRONTIER TIER - Maximum capability
   # ============================================
   
   # Claude Opus 4.1 - Latest frontier Claude  
-  claude-opus-41-ch2:
-    model_id: "claude-4-opus"
+  claude-4.1-opus-oneapi-anthropic:
+    model_id: "claude-4.1-opus"
     provider: "oneapi"
     provider_model_id: "claude-opus-4-1-20250805"
     priority: 1
@@ -263,8 +245,8 @@ deployments:
       cost_tier: "high"
 
   # Claude Opus 4 - Frontier Claude
-  claude-opus-4-ch2:
-    model_id: "claude-opus"
+  claude-4-opus-oneapi-anthropic:
+    model_id: "claude-4-opus"
     provider: "oneapi"
     provider_model_id: "claude-opus-4-20250514"
     priority: 2
@@ -282,7 +264,7 @@ deployments:
       cost_tier: "high"
 
   # GPT-5 Chat - Frontier OpenAI
-  gpt-5-chat-ch8:
+  gpt-5-chat-oneapi-openai:
     model_id: "gpt-5"
     provider: "oneapi"
     provider_model_id: "gpt-5-chat"
@@ -300,8 +282,46 @@ deployments:
       channel: "8"
       cost_tier: "high"
 
+  # GPT-5 Nano - Tiny GPT-5
+  gpt-5-nano-oneapi-openai:
+    model_id: "gpt-5-nano"
+    provider: "oneapi"
+    provider_model_id: "gpt-5-nano"
+    priority: 1
+    weight: 25
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "fast"
+      channel: "8"
+      cost_tier: "low"
+
+  # GPT-5 Mini - Balanced GPT-5
+  gpt-5-mini-oneapi-openai:
+    model_id: "gpt-5-mini"
+    provider: "oneapi"
+    provider_model_id: "gpt-5-mini"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "8"
+      cost_tier: "medium"
+
   # GPT-4.1 Full - Advanced OpenAI
-  gpt-41-full-ch8:
+  gpt-4.1-full-oneapi-openai:
     model_id: "gpt-41"
     provider: "oneapi"
     provider_model_id: "gpt-4.1"
@@ -320,7 +340,7 @@ deployments:
       cost_tier: "high"
 
   # Llama 405B - Massive open model
-  llama-405b-ch4:
+  llama-3.1-405b-oneapi-azure:
     model_id: "llama-405b"
     provider: "oneapi"
     provider_model_id: "Meta-Llama-31-405B-Instruct"
@@ -339,7 +359,7 @@ deployments:
       cost_tier: "high"
 
   # Llama 4 Maverick - Powerful 128 experts (AWS)
-  llama-maverick-ch10:
+  llama-4-maverick-oneapi-bedrock:
     model_id: "llama-maverick"
     provider: "oneapi"
     provider_model_id: "llama-4-maverick-17b"
@@ -358,7 +378,7 @@ deployments:
       cost_tier: "high"
 
   # Llama 4 Maverick - Azure backup
-  llama-maverick-ch4:
+  llama-4-maverick-oneapi-azure:
     model_id: "llama-maverick"
     provider: "oneapi"
     provider_model_id: "Llama-4-Maverick-17B-128E-Instruct-FP8"
@@ -377,7 +397,7 @@ deployments:
       cost_tier: "high"
 
   # Gemini 2.5 Pro - Google frontier
-  gemini-25-pro-ch3:
+  gemini-2.5-pro-oneapi-google:
     model_id: "gemini-pro"
     provider: "oneapi"
     provider_model_id: "gemini-2.5-pro"

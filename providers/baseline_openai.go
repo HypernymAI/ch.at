@@ -14,34 +14,26 @@ import (
 	"ch.at/models"
 )
 
-// OneAPIProvider handles OpenAI-compatible gateway (one-api)
-type OneAPIProvider struct {
+// BaselineOpenAICompatibilityProvider handles direct OpenAI-compatible API calls
+// This provider assumes the BaseURL is the COMPLETE endpoint (no path appending)
+type BaselineOpenAICompatibilityProvider struct {
 	client *http.Client
 }
 
-// NewOneAPIProvider creates a new OneAPI provider
-func NewOneAPIProvider() *OneAPIProvider {
-	return &OneAPIProvider{
+// NewBaselineOpenAICompatibilityProvider creates a new baseline provider
+func NewBaselineOpenAICompatibilityProvider() *BaselineOpenAICompatibilityProvider {
+	return &BaselineOpenAICompatibilityProvider{
 		client: &http.Client{
 			Timeout: 30 * time.Second,
 		},
 	}
 }
 
-// TranslateRequest converts unified request to OneAPI format
-func (o *OneAPIProvider) TranslateRequest(ctx context.Context, req *UnifiedRequest, deployment *models.Deployment) (*ProviderRequest, error) {
-	// For one-api, use the provider:model format from ProviderModelID
-	modelName := deployment.ProviderModelID
-	
-	// Strip provider prefix if present (e.g., "openai:gpt-3.5-turbo" -> "gpt-3.5-turbo")
-	// The provider info is already encoded in the API key suffix
-	if colonIdx := strings.Index(modelName, ":"); colonIdx != -1 {
-		modelName = modelName[colonIdx+1:]
-	}
-
+// TranslateRequest converts unified request to OpenAI format
+func (b *BaselineOpenAICompatibilityProvider) TranslateRequest(ctx context.Context, req *UnifiedRequest, deployment *models.Deployment) (*ProviderRequest, error) {
 	// Build OpenAI-compatible request body
 	body := map[string]interface{}{
-		"model":    modelName, // Now just the model name without provider prefix
+		"model":    deployment.ProviderModelID,
 		"messages": req.Messages,
 		"stream":   req.Stream,
 	}
@@ -59,15 +51,6 @@ func (o *OneAPIProvider) TranslateRequest(ctx context.Context, req *UnifiedReque
 	if len(req.Stop) > 0 {
 		body["stop"] = req.Stop
 	}
-	if len(req.Functions) > 0 {
-		body["functions"] = req.Functions
-	}
-	if req.ResponseFormat != nil {
-		body["response_format"] = req.ResponseFormat
-	}
-	if req.User != "" {
-		body["user"] = req.User
-	}
 
 	// Build headers
 	headers := map[string]string{
@@ -79,13 +62,10 @@ func (o *OneAPIProvider) TranslateRequest(ctx context.Context, req *UnifiedReque
 		headers["Authorization"] = "Bearer " + deployment.Endpoint.Auth.APIKey
 	}
 
-	// Add custom headers
-	for k, v := range deployment.Endpoint.CustomHeaders {
-		headers[k] = v
-	}
-
+	// CRITICAL DIFFERENCE: Use BaseURL AS-IS (it's already the complete endpoint)
+	// Don't append /v1/chat/completions like OneAPIProvider does
 	return &ProviderRequest{
-		URL:     deployment.Endpoint.BaseURL + "/v1/chat/completions",
+		URL:     deployment.Endpoint.BaseURL,  // URL is already complete!
 		Method:  "POST",
 		Headers: headers,
 		Body:    body,
@@ -93,8 +73,8 @@ func (o *OneAPIProvider) TranslateRequest(ctx context.Context, req *UnifiedReque
 	}, nil
 }
 
-// Execute sends the request to OneAPI
-func (o *OneAPIProvider) Execute(ctx context.Context, req *ProviderRequest) (*ProviderResponse, error) {
+// Execute sends the request to the API
+func (b *BaselineOpenAICompatibilityProvider) Execute(ctx context.Context, req *ProviderRequest) (*ProviderResponse, error) {
 	// Marshal body to JSON
 	jsonBody, err := json.Marshal(req.Body)
 	if err != nil {
@@ -113,7 +93,7 @@ func (o *OneAPIProvider) Execute(ctx context.Context, req *ProviderRequest) (*Pr
 	}
 
 	// Execute request
-	resp, err := o.client.Do(httpReq)
+	resp, err := b.client.Do(httpReq)
 	if err != nil {
 		return nil, fmt.Errorf("request failed: %w", err)
 	}
@@ -138,12 +118,12 @@ func (o *OneAPIProvider) Execute(ctx context.Context, req *ProviderRequest) (*Pr
 	}, nil
 }
 
-// TranslateResponse converts OneAPI response to unified format
-func (o *OneAPIProvider) TranslateResponse(ctx context.Context, resp *ProviderResponse, deployment *models.Deployment) (*UnifiedResponse, error) {
+// TranslateResponse converts API response to unified format
+func (b *BaselineOpenAICompatibilityProvider) TranslateResponse(ctx context.Context, resp *ProviderResponse, deployment *models.Deployment) (*UnifiedResponse, error) {
 	// Debug log the raw response
-	log.Printf("[OneAPI] Raw response for %s: %s", deployment.ProviderModelID, string(resp.Body))
+	log.Printf("[BaselineOpenAI] Raw response for %s: %s", deployment.ProviderModelID, string(resp.Body))
 	
-	// OneAPI already returns OpenAI-compatible format
+	// Parse OpenAI-compatible response format
 	var unifiedResp UnifiedResponse
 	if err := json.Unmarshal(resp.Body, &unifiedResp); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
@@ -156,12 +136,13 @@ func (o *OneAPIProvider) TranslateResponse(ctx context.Context, resp *ProviderRe
 	unifiedResp.Metadata["deployment_id"] = deployment.ID
 	unifiedResp.Metadata["provider"] = string(deployment.Provider)
 	unifiedResp.Metadata["provider_model"] = deployment.ProviderModelID
+	unifiedResp.Metadata["baseline_mode"] = true
 
 	return &unifiedResp, nil
 }
 
-// Stream handles streaming responses from OneAPI
-func (o *OneAPIProvider) Stream(ctx context.Context, req *ProviderRequest, stream chan<- StreamChunk) error {
+// Stream handles streaming responses
+func (b *BaselineOpenAICompatibilityProvider) Stream(ctx context.Context, req *ProviderRequest, stream chan<- StreamChunk) error {
 	defer close(stream)
 
 	// Ensure streaming is enabled in request
@@ -186,7 +167,7 @@ func (o *OneAPIProvider) Stream(ctx context.Context, req *ProviderRequest, strea
 		httpReq.Header.Set(k, v)
 	}
 
-	resp, err := o.client.Do(httpReq)
+	resp, err := b.client.Do(httpReq)
 	if err != nil {
 		stream <- StreamChunk{Error: err}
 		return err
@@ -241,26 +222,31 @@ func (o *OneAPIProvider) Stream(ctx context.Context, req *ProviderRequest, strea
 	return nil
 }
 
-// ValidateConfig validates OneAPI deployment configuration
-func (o *OneAPIProvider) ValidateConfig(deployment *models.Deployment) error {
+// ValidateConfig validates deployment configuration
+func (b *BaselineOpenAICompatibilityProvider) ValidateConfig(deployment *models.Deployment) error {
 	if deployment.Endpoint.BaseURL == "" {
 		return fmt.Errorf("base URL is required")
+	}
+
+	// For baseline mode, the URL should be complete (include /v1/chat/completions or equivalent)
+	if !strings.Contains(deployment.Endpoint.BaseURL, "/") || deployment.Endpoint.BaseURL == "http://" || deployment.Endpoint.BaseURL == "https://" {
+		return fmt.Errorf("baseline mode requires complete endpoint URL (e.g., https://api.openai.com/v1/chat/completions)")
 	}
 
 	if deployment.ProviderModelID == "" {
 		return fmt.Errorf("provider model ID is required")
 	}
 
-	// Validate auth if required
+	// Validate auth if required (but allow empty for local models)
 	if deployment.Endpoint.Auth.Type == models.AuthAPIKey && deployment.Endpoint.Auth.APIKey == "" {
-		return fmt.Errorf("API key is required but not provided")
+		log.Printf("[BaselineOpenAI] Warning: API key is empty (OK for local models)")
 	}
 
 	return nil
 }
 
-// HealthCheck performs a health check on OneAPI endpoint
-func (o *OneAPIProvider) HealthCheck(ctx context.Context, deployment *models.Deployment) error {
+// HealthCheck performs a health check
+func (b *BaselineOpenAICompatibilityProvider) HealthCheck(ctx context.Context, deployment *models.Deployment) error {
 	// Create a simple completion request
 	req := &UnifiedRequest{
 		Model: deployment.ProviderModelID,
@@ -272,7 +258,7 @@ func (o *OneAPIProvider) HealthCheck(ctx context.Context, deployment *models.Dep
 	}
 
 	// Translate to provider request
-	providerReq, err := o.TranslateRequest(ctx, req, deployment)
+	providerReq, err := b.TranslateRequest(ctx, req, deployment)
 	if err != nil {
 		return fmt.Errorf("health check translation failed: %w", err)
 	}
@@ -281,7 +267,7 @@ func (o *OneAPIProvider) HealthCheck(ctx context.Context, deployment *models.Dep
 	healthCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()
 
-	resp, err := o.Execute(healthCtx, providerReq)
+	resp, err := b.Execute(healthCtx, providerReq)
 	if err != nil {
 		return fmt.Errorf("health check request failed: %w", err)
 	}
@@ -294,16 +280,16 @@ func (o *OneAPIProvider) HealthCheck(ctx context.Context, deployment *models.Dep
 }
 
 // GetInfo returns provider information
-func (o *OneAPIProvider) GetInfo() ProviderInfo {
+func (b *BaselineOpenAICompatibilityProvider) GetInfo() ProviderInfo {
 	return ProviderInfo{
-		Name:           "OneAPI Gateway",
+		Name:           "Baseline OpenAI Compatibility",
 		Version:        "1.0",
 		SupportsStream: true,
-		RequiresAuth:   true,
+		RequiresAuth:   false, // May work without auth for local models
 		MaxRequestSize: 4 * 1024 * 1024, // 4MB
 		RateLimits: map[string]int{
-			"requests_per_minute": 1000,
-			"tokens_per_minute":   1000000,
+			"requests_per_minute": 100,    // Conservative default
+			"tokens_per_minute":   100000, // Conservative default
 		},
 	}
 }

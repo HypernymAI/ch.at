@@ -135,10 +135,20 @@ func handleSession(channel ssh.Channel, requests <-chan *ssh.Request) {
 						return
 					}
 
-					// Get LLM response with streaming
+					// Get service configuration
+					config := getServiceConfig("SSH")
+					
+					// Get LLM response with streaming using router
 					ch := make(chan string)
 					go func() {
-						if _, err := LLM(query, ch); err != nil {
+						messages := []map[string]string{
+							{"role": "user", "content": query},
+						}
+						params := &RouterParams{
+							MaxTokens:   config.MaxTokens,
+							Temperature: config.Temperature,
+						}
+						if _, err := LLMWithRouter(messages, config.Model, params, ch); err != nil {
 							fmt.Fprintf(channel, "Error: %s\r\n", err.Error())
 						}
 					}()

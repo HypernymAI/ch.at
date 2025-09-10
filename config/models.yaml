@@ -17,9 +17,8 @@ models:
       tokenizer_type: "llama"
       languages: ["en", "es", "fr", "de", "zh", "ja", "ko", "ar", "ru", "pt"]
     deployments:
-      - llama-8b-oneapi-azure
-      - llama-8b-oneapi-bedrock
-      - llama-8b-oneapi-vertex
+      - llama-3-8b-oneapi-bedrock
+      - llama-3.1-8b-oneapi-azure
     tags:
       tier: "standard"
       use_case: "general"
@@ -41,85 +40,13 @@ models:
       tokenizer_type: "llama"
       languages: ["en", "es", "fr", "de", "zh", "ja", "ko", "ar", "ru", "pt"]
     deployments:
-      - llama-70b-oneapi-azure
-      - llama-70b-oneapi-bedrock
-      - llama-70b-oneapi-vertex
+      - llama-3-70b-oneapi-bedrock
     tags:
       tier: "premium"
       use_case: "complex"
 
   # GPT Models
-  gpt-4:
-    name: "GPT-4"
-    family: "gpt"
-    version: "4.0"
-    capabilities:
-      max_tokens: 8192
-      context_window: 128000
-      supports_vision: true
-      supports_functions: true
-      supports_streaming: true
-      supports_json: true
-      tokens_per_second: 40
-      input_cost: 0.03
-      output_cost: 0.06
-      tokenizer_type: "cl100k"
-      languages: ["all"]
-    deployments:
-      - gpt-4-oneapi-azure
-      - gpt-4-oneapi-openai
-    tags:
-      tier: "premium"
-      use_case: "complex"
-
-  gpt-4-turbo:
-    name: "GPT-4 Turbo"
-    family: "gpt"
-    version: "4.0-turbo"
-    capabilities:
-      max_tokens: 4096
-      context_window: 128000
-      supports_vision: true
-      supports_functions: true
-      supports_streaming: true
-      supports_json: true
-      tokens_per_second: 60
-      input_cost: 0.01
-      output_cost: 0.03
-      tokenizer_type: "cl100k"
-      languages: ["all"]
-    deployments:
-      - gpt-4-turbo-oneapi-azure
-      - gpt-4-turbo-oneapi-openai
-    tags:
-      tier: "premium"
-      use_case: "fast-complex"
-
-  gpt-3.5-turbo:
-    name: "GPT-3.5 Turbo"
-    family: "gpt"
-    version: "3.5-turbo"
-    capabilities:
-      max_tokens: 4096
-      context_window: 16385
-      supports_vision: false
-      supports_functions: true
-      supports_streaming: true
-      supports_json: true
-      tokens_per_second: 100
-      input_cost: 0.0005
-      output_cost: 0.0015
-      tokenizer_type: "cl100k"
-      languages: ["all"]
-    deployments:
-      - gpt-35-turbo-oneapi-azure
-      - gpt-35-turbo-oneapi-openai
-    tags:
-      tier: "standard"
-      use_case: "general"
-
-  # Claude Models
-  claude-4-1-opus:
+  claude-4.1-opus:
     name: "Claude 4.1 Opus"
     family: "claude"
     version: "4.1"
@@ -130,14 +57,15 @@ models:
       supports_functions: true
       supports_streaming: true
       supports_json: true
-    deployments: []
+    deployments:
+      - claude-4.1-opus-oneapi-anthropic
     tags:
       tier: "frontier"
       
-  claude-3-opus:
-    name: "Claude 3 Opus"
+  claude-4-opus:
+    name: "Claude 4 Opus"
     family: "claude"
-    version: "3.0-opus"
+    version: "4.0-opus"
     capabilities:
       max_tokens: 4096
       context_window: 200000
@@ -151,17 +79,15 @@ models:
       tokenizer_type: "claude"
       languages: ["all"]
     deployments:
-      - claude-3-opus-oneapi-anthropic
-      - claude-3-opus-oneapi-bedrock
-      - claude-3-opus-oneapi-vertex
+      - claude-4-opus-oneapi-anthropic
     tags:
       tier: "premium"
       use_case: "analysis"
 
-  claude-3-sonnet:
-    name: "Claude 3 Sonnet"
+  claude-3.5-sonnet:
+    name: "Claude 3.5 Sonnet"
     family: "claude"
-    version: "3.0-sonnet"
+    version: "3.5-sonnet"
     capabilities:
       max_tokens: 4096
       context_window: 200000
@@ -175,17 +101,37 @@ models:
       tokenizer_type: "claude"
       languages: ["all"]
     deployments:
-      - claude-3-sonnet-oneapi-anthropic
-      - claude-3-sonnet-oneapi-bedrock
-      - claude-3-sonnet-oneapi-vertex
+      - claude-3.5-sonnet-oneapi-bedrock
     tags:
-      tier: "standard"
+      tier: "balanced"
+      use_case: "general"
+
+  claude-3.7-sonnet:
+    name: "Claude 3.7 Sonnet"
+    family: "claude"
+    version: "3.7-sonnet"
+    capabilities:
+      max_tokens: 8192
+      context_window: 200000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+      tokens_per_second: 60
+      input_cost: 0.003
+      output_cost: 0.015
+      tokenizer_type: "claude"
+      languages: ["all"]
+    deployments:
+      - claude-3.7-sonnet-oneapi-anthropic
+    tags:
+      tier: "balanced"
       use_case: "balanced"
 
-  claude-3-haiku:
-    name: "Claude 3 Haiku"
+  claude-3.5-haiku:
+    name: "Claude 3.5 Haiku"
     family: "claude"
-    version: "3.0-haiku"
+    version: "3.5-haiku"
     capabilities:
       max_tokens: 4096
       context_window: 200000
@@ -199,11 +145,202 @@ models:
       tokenizer_type: "claude"
       languages: ["all"]
     deployments:
-      - claude-3-haiku-oneapi-anthropic
-      - claude-3-haiku-oneapi-bedrock
+      - claude-3.5-haiku-oneapi-anthropic
     tags:
       tier: "economy"
       use_case: "fast"
+
+  # Additional Llama Models
+  llama-405b:
+    name: "Llama 3.1 405B"
+    family: "llama"
+    version: "3.1"
+    capabilities:
+      max_tokens: 32768
+      context_window: 32768
+      supports_vision: false
+      supports_functions: false
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - llama-3.1-405b-oneapi-azure
+    tags:
+      tier: "frontier"
+      use_case: "complex"
+
+  llama-scout:
+    name: "Llama 4 Scout"
+    family: "llama"
+    version: "4.0-scout"
+    capabilities:
+      max_tokens: 16384
+      context_window: 16384
+      supports_vision: false
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - llama-4-scout-oneapi-bedrock
+      - llama-4-scout-oneapi-azure
+    tags:
+      tier: "balanced"
+      use_case: "efficient"
+
+  llama-maverick:
+    name: "Llama 4 Maverick"
+    family: "llama"
+    version: "4.0-maverick"
+    capabilities:
+      max_tokens: 32768
+      context_window: 32768
+      supports_vision: false
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - llama-4-maverick-oneapi-bedrock
+      - llama-4-maverick-oneapi-azure
+    tags:
+      tier: "frontier"
+      use_case: "complex"
+
+  # Gemini Models
+  gemini-flash:
+    name: "Gemini 2.5 Flash"
+    family: "gemini"
+    version: "2.5-flash"
+    capabilities:
+      max_tokens: 128000
+      context_window: 128000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gemini-2.5-flash-oneapi-google
+    tags:
+      tier: "fast"
+      use_case: "general"
+
+  gemini-pro:
+    name: "Gemini 2.5 Pro"
+    family: "gemini"
+    version: "2.5-pro"
+    capabilities:
+      max_tokens: 128000
+      context_window: 128000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gemini-2.5-pro-oneapi-google
+    tags:
+      tier: "frontier"
+      use_case: "complex"
+
+  # Additional GPT Models
+  gpt-nano:
+    name: "GPT-4.1 Nano"
+    family: "gpt"
+    version: "4.1-nano"
+    capabilities:
+      max_tokens: 16384
+      context_window: 16384
+      supports_vision: false
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gpt-4.1-nano-oneapi-azure
+    tags:
+      tier: "fast"
+      use_case: "simple"
+
+  gpt-mini:
+    name: "GPT-4.1 Mini"
+    family: "gpt"
+    version: "4.1-mini"
+    capabilities:
+      max_tokens: 32768
+      context_window: 32768
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gpt-4.1-mini-oneapi-openai
+    tags:
+      tier: "balanced"
+      use_case: "general"
+
+  gpt-41:
+    name: "GPT-4.1"
+    family: "gpt"
+    version: "4.1"
+    capabilities:
+      max_tokens: 65536
+      context_window: 128000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gpt-4.1-full-oneapi-openai
+    tags:
+      tier: "frontier"
+      use_case: "complex"
+
+  gpt-5:
+    name: "GPT-5 Chat"
+    family: "gpt"
+    version: "5.0"
+    capabilities:
+      max_tokens: 128000
+      context_window: 256000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gpt-5-chat-oneapi-openai
+    tags:
+      tier: "frontier"
+      use_case: "advanced"
+
+  gpt-5-nano:
+    name: "GPT-5 Nano"
+    family: "gpt"
+    version: "5.0-nano"
+    capabilities:
+      max_tokens: 16384
+      context_window: 32768
+      supports_vision: false
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gpt-5-nano-oneapi-openai
+    tags:
+      tier: "fast"
+      use_case: "simple"
+
+  gpt-5-mini:
+    name: "GPT-5 Mini"
+    family: "gpt"
+    version: "5.0-mini"
+    capabilities:
+      max_tokens: 32768
+      context_window: 65536
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gpt-5-mini-oneapi-openai
+    tags:
+      tier: "balanced"
+      use_case: "general"
 
   # Mixtral Models
   mixtral-8x7b:
@@ -224,7 +361,6 @@ models:
       languages: ["en", "es", "fr", "de", "it"]
     deployments:
       - mixtral-8x7b-oneapi-local
-      - mixtral-8x7b-oneapi-bedrock
     tags:
       tier: "standard"
       use_case: "general"

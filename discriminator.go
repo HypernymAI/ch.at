@@ -127,7 +127,7 @@ func (m *CodeAnalysisModule) Process(input string, messages []map[string]string)
 		{"role": "user", "content": enhancedPrompt},
 	}
 	
-	response, err := LLMWithRouter(enhancedMessages, "llama-70b", nil)
+	response, err := LLMWithRouter(enhancedMessages, "llama-70b", nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -164,7 +164,7 @@ func (m *ResearchModule) Process(input string, messages []map[string]string) (st
 		{"role": "user", "content": enhancedPrompt},
 	}
 	
-	response, err := LLMWithRouter(enhancedMessages, "llama-70b", nil)
+	response, err := LLMWithRouter(enhancedMessages, "llama-70b", nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -198,7 +198,7 @@ func (m *CreativeWritingModule) Process(input string, messages []map[string]stri
 		{"role": "user", "content": input},
 	}
 	
-	response, err := LLMWithRouter(enhancedMessages, "llama-70b", nil)
+	response, err := LLMWithRouter(enhancedMessages, "llama-70b", nil, nil)
 	if err != nil {
 		return "", err
 	}

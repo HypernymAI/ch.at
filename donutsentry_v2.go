@@ -306,15 +306,25 @@ func handleV2ExecAsync(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Quest
 			}
 		}()
 		
+		// Get service configuration (V2 has its own config)
+		config := getServiceConfig("DONUTSENTRY_V2")
+		
 		// Generate response
 		dnsPrompt := "Answer in detail, no markdown formatting: " + fullQuery
 		log.Printf("[DonutSentryV2 Async] Calling LLM for session %s with %d char prompt", sessionID, len(dnsPrompt))
 		if debugMode {
-			log.Printf("[DonutSentryV2 Debug] About to call LLM - apiURL: %s, modelName: %s", apiURL, modelName)
+			log.Printf("[DonutSentryV2 Debug] About to call LLMWithRouter - model: %s", config.Model)
 		}
 		
 		llmStart := time.Now()
-		llmResp, err := LLM(dnsPrompt, nil)
+		messages := []map[string]string{
+			{"role": "user", "content": dnsPrompt},
+		}
+		params := &RouterParams{
+			MaxTokens:   config.MaxTokens,
+			Temperature: config.Temperature,
+		}
+		llmResp, err := LLMWithRouter(messages, config.Model, params, nil)
 		llmDuration := time.Since(llmStart)
 		
 		if err != nil {

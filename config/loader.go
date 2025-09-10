@@ -259,6 +259,8 @@ func BuildRouter(config *Config) (*routing.Router, *models.ModelRegistry, *model
 				apiKey = os.Getenv("ONE_API_KEY_COHERE")
 			case "10":
 				apiKey = os.Getenv("ONE_API_KEY")
+			case "11":
+				apiKey = os.Getenv("ONE_API_KEY_AZURE_GPT41_NANO")
 			default:
 				// Fall back to model name detection
 				if strings.HasPrefix(modelName, "gpt-3") || strings.HasPrefix(modelName, "gpt-4") && !strings.HasPrefix(modelName, "gpt-4.1") && !strings.HasPrefix(modelName, "gpt-5") {

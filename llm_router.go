@@ -11,9 +11,37 @@ import (
 	"ch.at/routing"
 )
 
+// LLMResponse contains the response and metadata from an LLM call
+type LLMResponse struct {
+	Content         string
+	InputTokens     int
+	OutputTokens    int
+	InputHash       string
+	OutputHash      string
+	Model           string
+	FinishReason    string
+	ContentFiltered bool
+}
+
 // LLMWithRouter calls the language model using the new routing system
-func LLMWithRouter(input interface{}, requestedModel string, stream chan<- string) (*LLMResponse, error) {
-	log.Printf("[LLMWithRouter] Starting routing for model: %s", requestedModel)
+// RouterParams contains all parameters for LLM routing
+type RouterParams struct {
+	MaxTokens        int
+	Temperature      float64
+	TopP             float64
+	Stop             []string
+	FrequencyPenalty float64
+	PresencePenalty  float64
+}
+
+func LLMWithRouter(input interface{}, requestedModel string, params *RouterParams, stream chan<- string) (*LLMResponse, error) {
+	return LLMWithRouterConv(input, requestedModel, "", params, stream)
+}
+
+// LLMWithRouterConv calls the language model with conversation tracking
+func LLMWithRouterConv(input interface{}, requestedModel string, conversationID string, params *RouterParams, stream chan<- string) (*LLMResponse, error) {
+	log.Printf("[LLMWithRouter] Starting routing for model: %s, convID: %s", requestedModel, conversationID)
+	log.Printf("[AUDIT] LLMWithRouterConv called with model=%s, convID=%s", requestedModel, conversationID)
 
 	// Build unified request
 	var messages []providers.Message
@@ -37,12 +65,28 @@ func LLMWithRouter(input interface{}, requestedModel string, stream chan<- strin
 		return nil, fmt.Errorf("invalid input type")
 	}
 
+	// Apply defaults if not provided
+	if params == nil {
+		params = &RouterParams{}
+	}
+	if params.MaxTokens <= 0 {
+		params.MaxTokens = 500
+	}
+	if params.Temperature <= 0 {
+		params.Temperature = 0.7
+	}
+	
+	log.Printf("[LLMWithRouter] Using params: MaxTokens=%d, Temperature=%f, TopP=%f", 
+		params.MaxTokens, params.Temperature, params.TopP)
+	
 	// Create unified request
 	unifiedReq := &providers.UnifiedRequest{
 		Model:       requestedModel,
 		Messages:    messages,
-		Temperature: 0.7,
-		MaxTokens:   500,
+		Temperature: params.Temperature,
+		MaxTokens:   params.MaxTokens,
+		TopP:        params.TopP,
+		Stop:        params.Stop,
 		Stream:      stream != nil,
 	}
 
@@ -55,9 +99,24 @@ func LLMWithRouter(input interface{}, requestedModel string, stream chan<- strin
 	// Get routing decision
 	decision, err := modelRouter.RouteRequest(context.Background(), requestedModel, reqCtx)
 	if err != nil {
-		// Fallback to old LLM function if routing fails
-		log.Printf("[LLMWithRouter] Routing failed, falling back to legacy: %v", err)
-		return LLM(input, stream)
+		// NO FALLBACK! FAIL PROPERLY!
+		log.Printf("[LLMWithRouter] Routing failed for model %s: %v", requestedModel, err)
+		
+		// Log the failure to audit
+		LogLLMInteraction(
+			conversationID,
+			requestedModel,
+			"FAILED",
+			"NONE",
+			input,
+			"",
+			0,
+			0,
+			err,
+		)
+		
+		// RETURN THE ERROR - DON'T SILENTLY USE WRONG MODEL!
+		return nil, fmt.Errorf("model '%s' not found in routing system: %v", requestedModel, err)
 	}
 
 	log.Printf("[LLMWithRouter] Selected deployment: %s (provider: %s, model: %s)",
@@ -103,10 +162,14 @@ func LLMWithRouter(input interface{}, requestedModel string, stream chan<- strin
 		}
 
 		// Extract content from response
+		log.Printf("[LLMWithRouter] Response has %d choices", len(unifiedResp.Choices))
 		if len(unifiedResp.Choices) > 0 {
 			response.Content = unifiedResp.Choices[0].Message.Content
+			log.Printf("[LLMWithRouter] Extracted content: %q (length: %d)", response.Content, len(response.Content))
 			response.OutputHash = generateSignature(response.Content)
 			response.FinishReason = unifiedResp.Choices[0].FinishReason
+		} else {
+			log.Printf("[LLMWithRouter] WARNING: No choices in response!")
 		}
 
 		// Use token counts from response if available
@@ -132,6 +195,19 @@ func LLMWithRouter(input interface{}, requestedModel string, stream chan<- strin
 		"finish_reason":    response.FinishReason,
 		"content_filtered": response.ContentFiltered,
 	})
+
+	// LOG TO AUDIT DATABASE
+	LogLLMInteraction(
+		conversationID,
+		requestedModel,
+		decision.Primary.ID,
+		string(decision.Primary.Provider),
+		input,
+		response.Content,
+		response.InputTokens,
+		response.OutputTokens,
+		err,
+	)
 
 	return response, err
 }

@@ -59,18 +59,30 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 		// Optimize prompt for DNS constraints
 		dnsPrompt := "Answer in 500 characters or less, no markdown formatting: " + prompt
 
+		// Get service configuration
+		config := getServiceConfig("DNS")
+		log.Printf("[DNS] Using model: %s (max_tokens=%d, temp=%.1f)", config.Model, config.MaxTokens, config.Temperature)
+		
 		// Stream LLM response with hard deadline
 		ch := make(chan string)
 		done := make(chan bool)
 
 		go func() {
-			if _, err := LLM(dnsPrompt, ch); err != nil {
+			// Use router with service configuration
+			messages := []map[string]string{
+				{"role": "user", "content": dnsPrompt},
+			}
+			params := &RouterParams{
+				MaxTokens:   config.MaxTokens,
+				Temperature: config.Temperature,
+			}
+			if _, err := LLMWithRouter(messages, config.Model, params, ch); err != nil {
 				select {
 				case ch <- "Error: " + err.Error():
 				case <-done:
 				}
 			}
-			// Don't close ch here - LLM function already does it with defer
+			// Don't close ch here - LLMWithRouter already does it with defer
 		}()
 
 		var response strings.Builder

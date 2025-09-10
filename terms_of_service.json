@@ -1,0 +1,240 @@
+{
+  "version": "1.0.0",
+  "effective_date": "2025-09-08",
+  "status": "active",
+  "summary": {
+    "title": "ch.at Terms of Service",
+    "agreement": "By using this API, you agree to these terms of service",
+    "description": "ch.at provides access to various Large Language Models (LLMs) through a unified routing interface. The service automatically selects appropriate models based on availability, performance, and user preferences."
+  },
+  "body": {
+    "sections": [
+      {
+        "title": "1. Service Description",
+        "content": "ch.at provides access to various Large Language Models (LLMs) through a unified routing interface. The service automatically selects appropriate models based on availability, performance, and user preferences."
+      },
+      {
+        "title": "2. System Telemetry (Always On)",
+        "content": "Essential operational metrics are collected to ensure service functionality. This is required for the service to operate - like 'necessary cookies'.",
+        "subsections": [
+          {
+            "title": "2.1 What We Collect",
+            "items": [
+              "Request metadata: Request IDs, timestamps, HTTP methods, paths",
+              "Performance metrics: Response times, token counts (input/output/total)",
+              "Routing decisions: Model selected, deployment used, provider channel",
+              "Error tracking: Rate limit events, routing failures, API errors",
+              "System health: Deployment availability, health check results"
+            ]
+          },
+          {
+            "title": "2.2 What We DON'T Collect in Telemetry",
+            "items": [
+              "Actual conversation content or prompts",
+              "User messages or model responses",
+              "Personal information or identifiers",
+              "IP addresses beyond rate limiting"
+            ]
+          },
+          {
+            "title": "2.3 Purpose",
+            "items": [
+              "Understanding LLM backend usage patterns",
+              "Capacity planning and optimization",
+              "Debugging routing decisions",
+              "Monitoring service health",
+              "Preventing abuse through rate limiting"
+            ]
+          },
+          {
+            "title": "2.4 Storage",
+            "content": "Telemetry exists only in memory during request processing. No persistent storage unless audit logging is enabled."
+          }
+        ]
+      },
+      {
+        "title": "3. Conversation Logging (Configurable)",
+        "subsections": [
+          {
+            "title": "3.1 When OFF (Default State)",
+            "items": [
+              "NO conversation content is stored anywhere",
+              "NO prompts or responses are logged to disk",
+              "NO conversation IDs are persisted",
+              "ONLY system telemetry (tokens, timing) is collected",
+              "Your conversations are completely ephemeral",
+              "Privacy level: MAXIMUM"
+            ]
+          },
+          {
+            "title": "3.2 When ON (Must Be Explicitly Enabled)",
+            "items": [
+              "ALL conversations stored in local SQLite database",
+              "FULL prompts and responses are logged",
+              "Conversation IDs and timestamps recorded",
+              "Model selection and routing decisions saved",
+              "Token counts and error messages logged",
+              "Storage location: llm_audit.db in server directory",
+              "Retention: Until manually deleted",
+              "Privacy level: MINIMAL"
+            ]
+          },
+          {
+            "title": "3.3 Your Control",
+            "content": "You have complete control over conversation logging:",
+            "items": [
+              "CHECK current status: GET /routing_table (look for green/red indicator)",
+              "CHECK via API: GET /health (see 'audit_logging' field)",
+              "CHECK via TOS: GET /terms_of_service?format=json",
+              "ENABLE logging: Set ENABLE_LLM_AUDIT=true in .env file",
+              "DISABLE logging: Set ENABLE_LLM_AUDIT=false or remove the line",
+              "DELETE all logs: rm llm_audit.db",
+              "VERIFY changes: Restart server and check /routing_table"
+            ]
+          }
+        ]
+      },
+      {
+        "title": "4. Acceptable Use",
+        "items": [
+          "General conversational AI queries",
+          "Code generation and debugging assistance",
+          "Educational and research purposes",
+          "Creative writing and content generation",
+          "Data analysis and interpretation",
+          "Language translation"
+        ]
+      },
+      {
+        "title": "5. Prohibited Uses",
+        "items": [
+          "Illegal activities or content",
+          "Harassment, abuse, or harm to individuals",
+          "Generation of misleading or fraudulent content",
+          "Attempts to compromise system security",
+          "Excessive automated requests causing service disruption",
+          "Violation of third-party model provider terms"
+        ]
+      },
+      {
+        "title": "6. Service Limitations",
+        "items": [
+          "No guarantee of model availability - deployments may be unhealthy",
+          "Response quality depends on underlying model capabilities",
+          "Rate limits may apply based on provider restrictions",
+          "No warranty of accuracy, completeness, or fitness for purpose",
+          "Service may be modified or discontinued without notice"
+        ]
+      },
+      {
+        "title": "7. Disclaimer",
+        "content": "THE SERVICE IS PROVIDED \"AS IS\" WITHOUT WARRANTY OF ANY KIND. USE AT YOUR OWN RISK. AI-GENERATED CONTENT MAY BE INACCURATE."
+      },
+      {
+        "title": "8. Changes to Terms",
+        "content": "These terms may be updated at any time. Check /terms_of_service for current version. Continued use constitutes acceptance."
+      },
+      {
+        "title": "9. Model Routing Transparency",
+        "content": "View current routing at /routing_table. The system will never silently substitute models - errors are explicit."
+      },
+      {
+        "title": "10. Configuration Commands",
+        "subsections": [
+          {
+            "title": "10.1 Check System Status",
+            "items": [
+              "curl http://localhost:8080/health",
+              "curl http://localhost:8080/routing_table",
+              "curl http://localhost:8080/terms_of_service?format=json"
+            ]
+          },
+          {
+            "title": "10.2 Control Audit Logging",
+            "items": [
+              "Enable: Add ENABLE_LLM_AUDIT=true to .env",
+              "Disable: Set ENABLE_LLM_AUDIT=false in .env",
+              "Delete logs: rm llm_audit.db",
+              "Check database: sqlite3 llm_audit.db '.tables'"
+            ]
+          },
+          {
+            "title": "10.3 Test Models",
+            "items": [
+              "curl -X POST http://localhost:8080/v1/chat/completions -H \"Content-Type: application/json\" -d '{\"model\":\"llama-8b\",\"messages\":[{\"role\":\"user\",\"content\":\"test\"}]}'",
+              "See /routing_table for all available models and test commands"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "references": {
+    "provider_terms": [],
+    "project": {
+      "name": "ch.at Source Code",
+      "url": "https://github.com/Deep-ai-inc/ch.at",
+      "description": "Full source code and documentation for this service"
+    },
+    "endpoints": [
+      {
+        "name": "Routing Table",
+        "url": "/routing_table",
+        "description": "View current model routing, health status, and audit configuration"
+      },
+      {
+        "name": "Health Check",
+        "url": "/health",
+        "description": "System configuration and operational status"
+      },
+      {
+        "name": "Models List",
+        "url": "/v1/models",
+        "description": "List all configured models with capabilities"
+      },
+      {
+        "name": "Terms of Service",
+        "url": "/terms_of_service",
+        "description": "This document (add ?format=json for API access)"
+      }
+    ]
+  },
+  "appendix": {
+    "audit_status": {
+      "current": "DYNAMIC",
+      "check_endpoint": "/routing_table",
+      "environment_variable": "ENABLE_LLM_AUDIT",
+      "default": "DISABLED"
+    },
+    "data_collection_summary": {
+      "system_telemetry": {
+        "status": "ALWAYS ON",
+        "configurable": false,
+        "includes": "Request IDs, token counts, routing decisions, performance metrics",
+        "excludes": "Conversation content, user data, IP addresses",
+        "storage": "In-memory only during request processing"
+      },
+      "conversation_logging": {
+        "status": "DYNAMIC",
+        "default": "DISABLED",
+        "configurable": true,
+        "when_enabled": {
+          "includes": "Full prompts, responses, conversation IDs, timestamps",
+          "storage": "SQLite database (llm_audit.db)",
+          "retention": "Manual deletion only"
+        },
+        "when_disabled": {
+          "includes": "Nothing",
+          "storage": "None",
+          "retention": "N/A"
+        }
+      }
+    },
+    "technical_details": {
+      "telemetry_system": "Beacon-based event tracking (in-memory)",
+      "audit_system": "SQLite-based conversation logging (optional)",
+      "default_model": "llama-8b",
+      "api_compatibility": "OpenAI API v1"
+    }
+  }
+}

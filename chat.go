@@ -16,6 +16,12 @@ func main() {
 	flag.BoolVar(&debugMode, "debug", false, "Enable debug logging")
 	flag.Parse()
 	
+	// Initialize audit database FIRST
+	if err := InitAuditDB(); err != nil {
+		log.Printf("WARNING: Audit database initialization failed: %v", err)
+		log.Println("LLM interactions will not be logged")
+	}
+	
 	// Initialize model router (non-blocking, falls back to legacy if fails)
 	if err := InitializeModelRouter(); err != nil {
 		log.Printf("Model router initialization failed: %v", err)

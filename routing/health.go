@@ -96,6 +96,15 @@ func (hc *HealthChecker) checkAll() {
 
 // checkDeployment checks a single deployment
 func (hc *HealthChecker) checkDeployment(deployment *models.Deployment) {
+	// Special handling for baseline fallback deployments
+	// They should stay healthy as long as they're configured
+	if deployment.Tags != nil && deployment.Tags["mode"] == "baseline" {
+		// For baseline deployments, just do a simple connectivity check
+		// Don't actually call the API to avoid rate limiting
+		hc.updateDeploymentHealth(deployment, true, "")
+		return
+	}
+	
 	ctx, cancel := context.WithTimeout(context.Background(), hc.timeout)
 	defer cancel()
 

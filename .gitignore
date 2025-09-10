@@ -13,3 +13,5 @@ ssh_host_key
 
 # OS files
 .DS_Store
+/ch.at
+node_modules
