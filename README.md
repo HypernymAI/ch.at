@@ -334,27 +334,32 @@ Basic DNS tunneling for queries that fit in standard DNS packets:
 ```bash
 # Query format: <query>.q.ch.at
 dig @ch.at "what-is-dns.q.ch.at" TXT
-
-# Features:
-# - Simple query/response
-# - Basic XOR encryption
-# - Limited to DNS packet size (~255 chars)
 ```
+
+**v1 Features:**
+- Simple query/response
+- Basic XOR encryption
+- Works within standard DNS limits
+
+**v1 Limitations:**
+- Query limited to ~255 characters (DNS packet size)
+- Response limited to ~500 bytes
+- May time out after 4 seconds for complex queries
 
 ### DoNutSentry v2 - Advanced DNS Tunneling
 
 Session-based protocol for unlimited query sizes:
 
+**v2 Features:**
+- Session management with key exchange
+- Query/response paging (unlimited size)
+- XOR encryption with perfect forward secrecy
+- Async processing (handles DNS timeouts)
+- Zero-overhead encryption
+
+**Protocol Flow:**
 ```bash
 # Domain: *.qp.ch.at
-# Features:
-# - Session management with key exchange
-# - Query/response paging (unlimited size)
-# - XOR encryption with perfect forward secrecy
-# - Async processing (handles DNS timeouts)
-# - Zero-overhead encryption
-
-# Protocol Flow:
 # 1. Initialize session: <client_keys>.init.qp.ch.at
 # 2. Send query pages: <session>.<page>.<data>.qp.ch.at
 # 3. Execute query: <session>.<total_pages>.exec.qp.ch.at
@@ -403,10 +408,10 @@ For complete DoNutSentry documentation, see [DoNutSentry v2 Manual](documentatio
 
 ## Limitations
 
-- **DNS**: Responses limited to ~500 bytes. Complex queries may time out after 4s. DNS queries automatically request concise, plain-text responses
+- **Basic DNS (non-DoNutSentry)**: Responses limited to ~500 bytes. Complex queries may time out after 4s. DNS queries automatically request concise, plain-text responses
 - **History**: Limited to 64KB to ensure compatibility across systems
 - **Rate limiting**: Basic IP-based limiting to prevent abuse
-- **No encryption**: SSH is encrypted, but HTTP/DNS are not
+- **No encryption**: SSH is encrypted, but HTTP/DNS are not (except DoNutSentry which uses XOR encryption)
 
 ## License
 

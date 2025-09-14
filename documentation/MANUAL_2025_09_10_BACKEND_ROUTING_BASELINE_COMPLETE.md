@@ -14,7 +14,7 @@
 
 ## Overview
 
-The backend routing system is the heart of ch.at, providing intelligent model selection, automatic failover, and seamless integration across all protocols. It enables per-transaction routing decisions with baseline fallback capabilities for high availability.
+The backend routing system is the heart of ch.at, providing intelligent model selection, automatic failover, and seamless integration across all protocols. It enables per-transaction routing decisions with baseline fallback capabilities for high availability. The system operates entirely server-side, with no client-side dependencies or tracking.
 
 ### Core Components
 
@@ -172,12 +172,14 @@ func (o *OneAPIProvider) ChatCompletion(...) {
 
 **Channel Mapping:**
 ```
-Channel 2:  Anthropic (Claude models)
+Channel 1:  OpenAI Direct
+Channel 2:  Anthropic
 Channel 3:  Google (Gemini models)  
 Channel 4:  Azure (Llama models)
-Channel 8:  OpenAI (GPT models)
-Channel 10: AWS Bedrock (Various)
-Channel 11: Azure OpenAI (gpt-4.1-nano)
+Channel 5:  GCP (llama-8b)
+Channel 8:  OpenAI via OneAPI
+Channel 10: AWS Bedrock (Claude models, others)
+Channel 11: Azure OpenAI (GPT models)
 ```
 
 ### Baseline Provider (`providers/baseline_openai.go`)

@@ -17,9 +17,10 @@ ch.at is a universal language model gateway that provides access to LLM capabili
 ### Design Principles
 - **Zero-Knowledge by Default**: No user tracking, no persistent storage of conversations
 - **Protocol Diversity**: Access through HTTP, SSH, DNS, and OpenAI-compatible API
-- **Single Binary**: ~1,300 lines of Go, minimal dependencies
+- **Single Binary**: Pure Go implementation with minimal dependencies
+- **Classic Server Architecture**: All logic executes server-side, no client dependencies or tracking scripts
 - **Transparency First**: Live endpoints showing system state and data handling
-- **Router-Based Architecture**: Dynamic model routing with fallback capabilities
+- **Router-Based Architecture**: Dynamic model routing with automatic failover and baseline fallback
 
 ### System Components
 
@@ -103,21 +104,21 @@ Central routing engine that:
 ### HTTP/HTTPS (Ports 80/443 or 8080/8443)
 
 **Features:**
-- No JavaScript required
-- Server-side rendering
+- Pure server-side rendering following classic web architecture
 - Path-based queries (`/what-is-rust`)
 - Query parameter support (`/?q=hello`)
-- Session support (client-side storage)
-- Model selection UI
-- Conversation history (LocalStorage)
+- Session tracking via form fields (no cookies required)
+- Model selection through HTML radio buttons
+- Conversation history maintained server-side
 
 **Endpoints:**
-- `/` - Main interface
+- `/` - Main interface (pure HTML)
 - `/v1/chat/completions` - OpenAI-compatible API
+- `/v1/models` - List available models
+- `/v1/deployments` - List deployment configurations
 - `/health` - System health check
-- `/routing_table` - Live routing status
-- `/terms_of_service` - Current ToS
-- `/ws` - WebSocket streaming
+- `/routing_table` - Live routing status and model availability
+- `/terms_of_service` - Current Terms of Service
 
 ### SSH (Port 22 or 2222)
 
