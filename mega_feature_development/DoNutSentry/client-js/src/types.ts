@@ -46,6 +46,11 @@ export interface QueryOptions {
    * Custom timeout for this query
    */
   timeout?: number;
+
+  /**
+   * Force specific version
+   */
+  version?: 'v1' | 'v2';
 }
 
 export interface QueryResult {
@@ -73,6 +78,9 @@ export interface QueryResult {
     mode?: 'simple' | 'session';
     sessionId?: string;
     totalChunks?: number;
+    version?: 'v1' | 'v2';
+    totalQueryPages?: number;
+    totalResponsePages?: number;
   };
 }
 

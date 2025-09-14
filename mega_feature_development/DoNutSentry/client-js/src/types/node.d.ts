@@ -6,3 +6,8 @@ declare module 'crypto' {
     privateKey: T2;
   }
 }
+
+// Add Web Crypto types for Node.js
+declare global {
+  type CryptoKey = any;
+}

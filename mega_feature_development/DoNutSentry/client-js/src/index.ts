@@ -7,12 +7,13 @@ import { promisify } from 'util';
 import * as base32 from 'hi-base32';
 import { compress } from './compression';
 import { SessionManager } from './session';
+import { SessionV2Manager } from './session-v2';
 import { CustomResolver } from './custom-resolver';
-import { 
-  DoNutSentryOptions, 
-  QueryOptions, 
+import {
+  DoNutSentryOptions,
+  QueryOptions,
   QueryResult,
-  EncodingStrategy 
+  EncodingStrategy
 } from './types';
 
 export class DoNutSentryClient {
@@ -27,7 +28,7 @@ export class DoNutSentryClient {
       retries: 3,
       ...options
     };
-    
+
     // Check if custom port is specified
     if (options.dnsServers && options.dnsServers.length > 0 && options.dnsServers[0].includes(':')) {
       // Use custom resolver for non-standard ports
@@ -46,8 +47,14 @@ export class DoNutSentryClient {
    */
   async query(text: string, options: QueryOptions = {}): Promise<QueryResult> {
     const startTime = Date.now();
+
+    // Check if v2 is requested, domain is qp.ch.at, or if response will be large
+    if (options.version === 'v2' || this.domain === 'qp.ch.at' || this.shouldUseV2(text)) {
+      return await this.queryV2(text, startTime);
+    }
+
     const encoding = options.encoding || this.selectEncodingStrategy(text);
-    
+
     let encoded: string;
     let metadata: any = { encoding };
 
@@ -56,7 +63,7 @@ export class DoNutSentryClient {
       if (encoding === 'session') {
         return await this.queryWithSession(text, metadata, startTime);
       }
-      
+
       // First, try to encode the query
       switch (encoding) {
         case 'simple':
@@ -80,7 +87,7 @@ export class DoNutSentryClient {
 
       // Simple mode - single DNS query
       const response = await this.queryWithRetries(domain);
-      
+
       return {
         query: text,
         response,
@@ -158,7 +165,7 @@ export class DoNutSentryClient {
 
       } catch (error) {
         lastError = error as Error;
-        
+
         // Don't retry on NXDOMAIN
         if (error && (error as any).code === 'ENOTFOUND') {
           break;
@@ -189,6 +196,86 @@ export class DoNutSentryClient {
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Determine if v2 should be used
+   */
+  private shouldUseV2(text: string): boolean {
+    // Use v2 for queries that might have long responses
+    return text.includes('explain') ||
+           text.includes('detail') ||
+           text.includes('describe') ||
+           text.length > 100;
+  }
+
+  /**
+   * Query using v2 protocol with automatic paging
+   */
+  private async queryV2(text: string, startTime: number): Promise<QueryResult> {
+    const session = new SessionV2Manager({
+      resolver: this.resolver,
+      timeout: this.options.timeout
+    });
+
+    try {
+      // Initialize v2 session
+      const sessionId = await session.initSession();
+
+      // Send query pages if needed
+      const queryPages = session.calculateQueryPages(text);
+      for (let i = 0; i < queryPages.length; i++) {
+        await session.sendQueryPage(i, queryPages[i]);
+        // Add delay between pages to prevent DNS timeout on long queries
+        if (i < queryPages.length - 1) {
+          if (queryPages.length > 15) {
+            await this.sleep(100); // 100ms for very long queries
+          } else if (queryPages.length > 10) {
+            await this.sleep(50); // 50ms for moderately long queries
+          }
+        }
+      }
+
+      // Execute and get first page
+      const firstPage = await session.execute(queryPages.length);
+      let fullResponse = firstPage.content;
+
+      // Automatically fetch remaining pages
+      let currentPage = firstPage;
+      while (currentPage.hasMore) {
+        currentPage = await session.getPage(currentPage.currentPage + 1);
+        fullResponse += currentPage.content;
+      }
+
+      return {
+        query: text,
+        response: fullResponse,
+        metadata: {
+          encoding: 'session' as EncodingStrategy,
+          duration: Date.now() - startTime,
+          success: true,
+          mode: 'session',
+          version: 'v2',
+          sessionId,
+          totalQueryPages: queryPages.length,
+          totalResponsePages: firstPage.totalPages
+        }
+      };
+
+    } catch (error) {
+      return {
+        query: text,
+        response: '',
+        metadata: {
+          encoding: 'session' as EncodingStrategy,
+          duration: Date.now() - startTime,
+          success: false,
+          error: error instanceof Error ? error.message : 'Unknown error',
+          mode: 'session',
+          version: 'v2'
+        }
+      };
+    }
   }
 
   /**

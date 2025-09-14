@@ -1,0 +1,843 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DonutSentry v2 Protocol Demo</title>
+    <!-- Load tweetnacl for crypto -->
+    <script src="https://unpkg.com/tweetnacl@1.0.3/nacl-fast.min.js"></script>
+    <script src="https://unpkg.com/tweetnacl-util@0.15.1/nacl-util.min.js"></script>
+    <style>
+        body {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            margin: 0;
+            padding: 10px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        h1 {
+            color: #569cd6;
+            margin: 5px 0;
+            font-size: 20px;
+        }
+        h2 {
+            color: #569cd6;
+            margin: 5px 0;
+            font-size: 16px;
+        }
+        .main-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: minmax(120px, auto) 1fr minmax(0, 25%);
+            gap: 10px;
+            overflow: hidden;
+            height: 100%;
+        }
+        .panel {
+            background: #252526;
+            border: 1px solid #464647;
+            border-radius: 5px;
+            padding: 10px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .full-width {
+            grid-column: 1 / -1;
+        }
+        input, textarea {
+            width: 100%;
+            padding: 6px;
+            margin: 5px 0;
+            background: #3c3c3c;
+            border: 1px solid #464647;
+            color: #d4d4d4;
+            font-family: inherit;
+            box-sizing: border-box;
+            font-size: 12px;
+        }
+        textarea {
+            resize: vertical;
+            min-height: 60px;
+            max-height: 150px;
+        }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            cursor: pointer;
+            margin: 2px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        button:hover {
+            background: #1177bb;
+        }
+        button:disabled {
+            background: #464647;
+            cursor: not-allowed;
+        }
+        .log {
+            background: #1e1e1e;
+            border: 1px solid #464647;
+            padding: 8px;
+            margin: 5px 0;
+            overflow-y: auto;
+            font-size: 11px;
+            white-space: pre-wrap;
+            flex: 1;
+        }
+        .metric {
+            display: inline-block;
+            background: #264f78;
+            padding: 2px 6px;
+            margin: 2px;
+            border-radius: 3px;
+            font-size: 11px;
+        }
+        .error {
+            color: #f48771;
+        }
+        .success {
+            color: #4ec9b0;
+        }
+        .warning {
+            color: #dcdcaa;
+        }
+        .info {
+            color: #9cdcfe;
+        }
+        .phase {
+            margin: 5px 0;
+            padding: 8px;
+            background: #2d2d30;
+            border-left: 3px solid #569cd6;
+        }
+        .phase h3 {
+            margin: 0 0 5px 0;
+            font-size: 14px;
+        }
+        .phase p {
+            margin: 0 0 5px 0;
+            font-size: 12px;
+        }
+        .timing-chart {
+            display: flex;
+            align-items: center;
+            margin: 3px 0;
+            font-size: 11px;
+        }
+        .timing-bar {
+            height: 20px;
+            background: #569cd6;
+            margin-left: 10px;
+            display: flex;
+            align-items: center;
+            padding: 0 5px;
+            font-size: 11px;
+            color: white;
+        }
+        .pages-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 10px;
+            margin: 10px 0;
+        }
+        .page-card {
+            background: #2d2d30;
+            border: 1px solid #464647;
+            padding: 10px;
+            border-radius: 3px;
+        }
+        .page-card h4 {
+            margin: 0 0 5px 0;
+            color: #569cd6;
+        }
+        .stats {
+            display: flex;
+            gap: 10px;
+            margin: 5px 0;
+            flex-wrap: wrap;
+        }
+        .stat-card {
+            background: #2d2d30;
+            padding: 8px 12px;
+            text-align: center;
+            border-radius: 3px;
+            flex: 1;
+            min-width: 100px;
+        }
+        .stat-value {
+            font-size: 20px;
+            color: #569cd6;
+            font-weight: bold;
+        }
+        .stat-label {
+            font-size: 11px;
+            color: #969696;
+        }
+    </style>
+</head>
+<body>
+    <h1>🍩 DoNutSentry v2 Protocol Demo</h1>
+    
+    <div class="main-container">
+        <!-- Top Row: Input and Config -->
+        <div class="panel">
+            <h2>Query Input</h2>
+            <textarea id="queryInput" rows="2" placeholder="Enter your query here...">what is DNS</textarea>
+            <div style="display: flex; flex-wrap: wrap; gap: 5px;">
+                <button id="executeBtn" style="background: #16825d;">▶ Execute Query</button>
+                <button onclick="loadExample('tiny')">Tiny (5 words)</button>
+                <button onclick="loadExample('simple')">Simple (1 page)</button>
+                <button onclick="loadExample('medium')">Medium (5 pages)</button>
+                <button onclick="loadExample('large')">Large (10 pages)</button>
+                <button onclick="loadExample('huge')">Huge (20 pages)</button>
+            </div>
+        </div>
+        
+        <div class="panel">
+            <h2>Metrics & Config</h2>
+            <div class="stats" style="margin: 0;">
+                <div class="stat-card">
+                    <div class="stat-value" id="statTotalTime">-</div>
+                    <div class="stat-label">Total (ms)</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statQueryPages">-</div>
+                    <div class="stat-label">Q Pages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statResponsePages">-</div>
+                    <div class="stat-label">R Pages</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="statDnsQueries">-</div>
+                    <div class="stat-label">DNS Calls</div>
+                </div>
+            </div>
+            <div style="font-size: 11px; margin-top: 10px;">
+                <label><input type="checkbox" id="detailedLogs" checked> Detailed logs</label>
+                <label><input type="checkbox" id="autoScroll" checked> Auto-scroll</label>
+                <div style="margin-top: 5px; color: #969696;">Bridge: localhost:8081</div>
+            </div>
+        </div>
+
+        <!-- Middle Row: Execution Flow -->
+        <div class="panel" style="grid-column: 1 / -1; overflow: hidden;">
+            <h2>Protocol Execution & Response</h2>
+            <div style="display: grid; grid-template-columns: 2fr 1fr 1fr 3fr; gap: 10px; flex: 1; overflow: hidden; height: calc(100% - 35px);">
+                <div style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+                    <h3 style="font-size: 13px; margin: 0 0 5px 0;">Execution Flow</h3>
+                    <div class="log" id="protocolPhases" style="margin: 0; flex: 1;"></div>
+                </div>
+                <div style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+                    <h3 style="font-size: 13px; margin: 0 0 5px 0;">Query Pages</h3>
+                    <div class="log" id="queryPagesLog" style="margin: 0; flex: 1;"></div>
+                </div>
+                <div style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+                    <h3 style="font-size: 13px; margin: 0 0 5px 0;">Response Pages</h3>
+                    <div class="log" id="responsePagesLog" style="margin: 0; flex: 1;"></div>
+                </div>
+                <div style="display: flex; flex-direction: column; overflow: hidden; height: 100%;">
+                    <h3 style="font-size: 13px; margin: 0 0 5px 0;">Final Response</h3>
+                    <div class="log" id="finalResponse" style="margin: 0; flex: 1;"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bottom Row: Debug Log and Timing -->
+        <div class="panel" style="grid-column: 1 / -1; max-height: 25vh; overflow: hidden;">
+            <h2 style="font-size: 14px;">Debug Log & Timing</h2>
+            <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 10px; flex: 1; overflow: hidden; height: calc(100% - 30px);">
+                <div class="log" id="debugLog" style="margin: 0; font-size: 10px; line-height: 1.3;"></div>
+                <div style="overflow: auto;">
+                    <div id="timingChart" style="padding: 5px; font-size: 10px;"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Logging utilities
+        const logs = {
+            debug: [],
+            phases: [],
+            queryPages: [],
+            responsePages: []
+        };
+
+        const metrics = {
+            startTime: 0,
+            sessionInit: 0,
+            queryPages: [],
+            execute: 0,
+            responsePages: [],
+            totalDnsQueries: 0
+        };
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toISOString().split('T')[1].split('.')[0];
+            const logEntry = `[${timestamp}] ${message}`;
+            logs.debug.push({ message: logEntry, type });
+            
+            if (document.getElementById('detailedLogs').checked) {
+                const debugLog = document.getElementById('debugLog');
+                const span = document.createElement('span');
+                span.className = type;
+                span.textContent = logEntry + '\n';
+                span.style.fontSize = '10px';
+                span.style.lineHeight = '1.2';
+                debugLog.appendChild(span);
+                
+                if (document.getElementById('autoScroll').checked) {
+                    debugLog.scrollTop = debugLog.scrollHeight;
+                }
+            }
+        }
+
+        function clearLogs() {
+            document.getElementById('debugLog').innerHTML = '';
+            document.getElementById('protocolPhases').innerHTML = '';
+            document.getElementById('queryPagesLog').innerHTML = '';
+            document.getElementById('responsePagesLog').innerHTML = '';
+            document.getElementById('finalResponse').innerHTML = '';
+            document.getElementById('timingChart').innerHTML = '';
+            logs.debug = [];
+            logs.phases = [];
+            logs.queryPages = [];
+            logs.responsePages = [];
+        }
+
+        function updateStats() {
+            const totalTime = Date.now() - metrics.startTime;
+            document.getElementById('statTotalTime').textContent = totalTime;
+            document.getElementById('statQueryPages').textContent = metrics.queryPages.length;
+            document.getElementById('statResponsePages').textContent = metrics.responsePages.length;
+            document.getElementById('statDnsQueries').textContent = metrics.totalDnsQueries;
+        }
+
+        function addPhase(title, description, status = 'active') {
+            const phasesDiv = document.getElementById('protocolPhases');
+            const phase = document.createElement('div');
+            phase.className = 'phase';
+            phase.style.fontSize = '11px';
+            phase.innerHTML = `
+                <strong style="color: #569cd6;">${title}</strong><br>
+                <span style="color: #969696;">${description}</span>
+                <div id="phase-${title.replace(/\s+/g, '-').toLowerCase()}-details" style="margin-top: 5px;"></div>
+            `;
+            phasesDiv.appendChild(phase);
+        }
+
+        function updatePhase(title, details) {
+            const phaseId = `phase-${title.replace(/\s+/g, '-').toLowerCase()}-details`;
+            const detailsDiv = document.getElementById(phaseId);
+            if (detailsDiv) {
+                detailsDiv.innerHTML = details;
+            }
+        }
+
+        // DNS query function
+        async function dnsQuery(domain) {
+            const bridgeUrl = 'http://localhost:8081/dns/query';
+            const url = `${bridgeUrl}?domain=${encodeURIComponent(domain)}&type=TXT`;
+            
+            log(`DNS Query: ${domain}`, 'info');
+            metrics.totalDnsQueries++;
+            
+            try {
+                const startTime = Date.now();
+                const response = await fetch(url, {
+                    cache: 'no-store'
+                });
+                const data = await response.json();
+                const duration = Date.now() - startTime;
+                
+                if (response.ok) {
+                    log(`DNS Response: ${data.records.join(', ')} (${duration}ms)`, 'success');
+                    return data.records;
+                } else {
+                    throw new Error(data.error || 'DNS query failed');
+                }
+            } catch (error) {
+                log(`DNS Error: ${error.message}`, 'error');
+                throw error;
+            }
+        }
+
+        // Base32 encoding/decoding
+        function base32Encode(data) {
+            if (typeof data === 'string') {
+                data = new TextEncoder().encode(data);
+            }
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            let result = '';
+            let buffer = 0;
+            let bitsLeft = 0;
+            
+            for (let i = 0; i < data.length; i++) {
+                buffer = (buffer << 8) | data[i];
+                bitsLeft += 8;
+                
+                while (bitsLeft >= 5) {
+                    result += alphabet[(buffer >> (bitsLeft - 5)) & 0x1F];
+                    bitsLeft -= 5;
+                }
+            }
+            
+            if (bitsLeft > 0) {
+                result += alphabet[(buffer << (5 - bitsLeft)) & 0x1F];
+            }
+            
+            return result;
+        }
+
+        function base32Decode(encoded) {
+            const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+            // Add padding if needed
+            const padded = encoded + '='.repeat((8 - encoded.length % 8) % 8);
+            
+            let buffer = 0;
+            let bitsLeft = 0;
+            const output = [];
+            
+            for (let i = 0; i < padded.length; i++) {
+                const char = padded[i];
+                if (char === '=') break;
+                
+                const val = alphabet.indexOf(char);
+                if (val === -1) throw new Error('Invalid base32 character');
+                
+                buffer = (buffer << 5) | val;
+                bitsLeft += 5;
+                
+                if (bitsLeft >= 8) {
+                    output.push((buffer >> (bitsLeft - 8)) & 0xFF);
+                    bitsLeft -= 8;
+                }
+            }
+            
+            return new Uint8Array(output);
+        }
+
+        // Crypto functions using tweetnacl
+        let clientKeys = null;
+        let sharedSecret = null;
+
+        function generateKeyPairs() {
+            return {
+                encryptionKeys: nacl.box.keyPair(),
+                signingKeys: nacl.sign.keyPair()
+            };
+        }
+
+        function deriveSharedSecret(privateKey, publicKey) {
+            return nacl.box.before(publicKey, privateKey);
+        }
+
+        async function sha256(data) {
+            const buffer = await crypto.subtle.digest('SHA-256', data);
+            return new Uint8Array(buffer);
+        }
+
+        async function deriveXORKey(sharedSecret, context, length) {
+            const key = new Uint8Array(length);
+            const contextBytes = new TextEncoder().encode(context);
+            
+            for (let i = 0; i < length; i += 32) {
+                // Create input: sharedSecret || context || counter
+                const input = new Uint8Array(sharedSecret.length + contextBytes.length + 1);
+                input.set(sharedSecret, 0);
+                input.set(contextBytes, sharedSecret.length);
+                input[sharedSecret.length + contextBytes.length] = i / 32;
+                
+                // Hash it
+                const hash = await sha256(input);
+                
+                // Copy to output
+                const copyLen = Math.min(32, length - i);
+                key.set(hash.slice(0, copyLen), i);
+            }
+            
+            return key;
+        }
+
+        function xorEncrypt(plaintext, key) {
+            if (key.length < plaintext.length) {
+                throw new Error('XOR key too short');
+            }
+            const result = new Uint8Array(plaintext.length);
+            for (let i = 0; i < plaintext.length; i++) {
+                result[i] = plaintext[i] ^ key[i];
+            }
+            return result;
+        }
+
+        function xorDecrypt(ciphertext, key) {
+            return xorEncrypt(ciphertext, key); // XOR is symmetric
+        }
+
+        // Calculate query pages
+        function calculateQueryPages(query) {
+            // With XOR encryption, we have zero overhead!
+            const queryBytes = new TextEncoder().encode(query);
+            const maxBytesPerPage = 39; // 39 bytes per page (62 chars base32)
+            const pages = [];
+            
+            for (let i = 0; i < queryBytes.length; i += maxBytesPerPage) {
+                const pageBytes = queryBytes.slice(i, i + maxBytesPerPage);
+                pages.push(pageBytes);
+            }
+            
+            return pages;
+        }
+
+        // Main execution function
+        async function executeQuery() {
+            clearLogs();
+            const queryInput = document.getElementById('queryInput');
+            if (!queryInput) {
+                console.error('Query input element not found');
+                alert('Error: Query input not found. Please refresh the page.');
+                return;
+            }
+            const query = queryInput.value;
+            if (!query) {
+                alert('Please enter a query');
+                return;
+            }
+
+            metrics.startTime = Date.now();
+            metrics.queryPages = [];
+            metrics.responsePages = [];
+            metrics.totalDnsQueries = 0;
+
+            log('=== Starting DoNutSentry v2 Protocol ===', 'info');
+            
+            let sessionId;
+            
+            try {
+                // Phase 1: Session Initialization
+                addPhase('Session Initialization', 'Establishing secure session with keypair exchange');
+                
+                // Generate real keypairs
+                clientKeys = generateKeyPairs();
+                const encPubKey = base32Encode(clientKeys.encryptionKeys.publicKey);
+                const sigPubKey = base32Encode(clientKeys.signingKeys.publicKey);
+                const initDomain = `${encPubKey}.${sigPubKey}.init.qp.ch.at`;
+                
+                const initStart = Date.now();
+                const initResponse = await dnsQuery(initDomain);
+                metrics.sessionInit = Date.now() - initStart;
+                
+                // Parse session ID from response
+                // Response format: length_prefix[3] + encrypted_session_id[base64] + server_pubkeys[base32]
+                const initResponseStr = initResponse[0];
+                const encSessionLen = parseInt(initResponseStr.substring(0, 3));
+                const encryptedSessionIdB64 = initResponseStr.substring(3, 3 + encSessionLen);
+                const serverPubKeysB32 = initResponseStr.substring(3 + encSessionLen);
+                
+                // Decode server public keys
+                const serverKeys = base32Decode(serverPubKeysB32);
+                const serverEncPubKey = serverKeys.slice(0, 32);
+                const serverSigPubKey = serverKeys.slice(32, 64);
+                
+                // Derive shared secret
+                sharedSecret = deriveSharedSecret(clientKeys.encryptionKeys.secretKey, serverEncPubKey);
+                
+                // Decrypt session ID
+                const encryptedSessionId = nacl.util.decodeBase64(encryptedSessionIdB64);
+                const decrypted = nacl.box.open(
+                    encryptedSessionId.slice(24), // ciphertext after nonce
+                    encryptedSessionId.slice(0, 24), // nonce
+                    serverEncPubKey,
+                    clientKeys.encryptionKeys.secretKey
+                );
+                
+                if (!decrypted) {
+                    throw new Error('Failed to decrypt session ID');
+                }
+                
+                // Extract session ID (first 16 bytes)
+                const sessionIdBytes = decrypted.slice(0, 16);
+                sessionId = base32Encode(sessionIdBytes);
+                
+                log(`Session established: ${sessionId}`, 'success');
+                log(`Shared secret derived for XOR encryption`, 'info');
+                updatePhase('Session Initialization', `
+                    <div class="metric">Session ID: ${sessionId}</div>
+                    <div class="metric">Duration: ${metrics.sessionInit}ms</div>
+                    <div class="metric">Shared secret: ✓</div>
+                `);
+
+                // Phase 2: Query Chunking and Transmission
+                addPhase('Query Transmission', 'Splitting query into DNS-compatible chunks');
+                const queryPages = calculateQueryPages(query);
+                log(`Query requires ${queryPages.length} pages`, 'info');
+                
+                let queryPagesHtml = '';
+                for (let i = 0; i < queryPages.length; i++) {
+                    // Convert page number to base32 encoding
+                    const pageNumBytes = new Uint8Array([i]);
+                    const pageNum = base32Encode(pageNumBytes).substring(0, 2).padEnd(2, 'A');
+                    
+                    // Derive XOR key for this page
+                    const context = `query:page:${i}`;
+                    const xorKey = await deriveXORKey(sharedSecret, context, queryPages[i].length);
+                    
+                    // Encrypt with XOR
+                    const encrypted = xorEncrypt(queryPages[i], xorKey);
+                    
+                    // Base32 encode the encrypted content
+                    const encodedPage = base32Encode(encrypted);
+                    const domain = `${sessionId}.${pageNum}.${encodedPage}.qp.ch.at`;
+                    
+                    const pageStart = Date.now();
+                    await dnsQuery(domain);
+                    const pageDuration = Date.now() - pageStart;
+                    metrics.queryPages.push(pageDuration);
+                    
+                    const logEntry = `Page ${i + 1}/${queryPages.length}: ${encodedPage.substring(0, 20)}... (${pageDuration}ms)`;
+                    document.getElementById('queryPagesLog').textContent += logEntry + '\n';
+                    queryPagesHtml += `<div class="metric">Page ${i + 1}: ${pageDuration}ms</div>`;
+                }
+                
+                updatePhase('Query Transmission', queryPagesHtml + `
+                    <div class="metric">Total pages: ${queryPages.length}</div>
+                    <div class="metric">Avg time: ${Math.round(metrics.queryPages.reduce((a, b) => a + b, 0) / metrics.queryPages.length)}ms</div>
+                `);
+
+                // Phase 3: Execute Query
+                addPhase('Query Execution', 'Server processing query and generating response');
+                // Encode total pages count
+                const totalPagesBytes = new Uint8Array([queryPages.length]);
+                const totalPagesEncoded = base32Encode(totalPagesBytes).substring(0, 2).padEnd(2, 'A');
+                const execDomain = `${sessionId}.${totalPagesEncoded}.exec.qp.ch.at`;
+                
+                const execStart = Date.now();
+                const execResponse = await dnsQuery(execDomain);
+                metrics.execute = Date.now() - execStart;
+                
+                // Parse first page - handle both PROCESSING and direct response
+                let firstPageData, totalPages = 1;
+                
+                if (execResponse[0] === 'PROCESSING') {
+                    log('Query submitted for processing, polling for results...', 'info');
+                    
+                    // Poll for status
+                    let pollCount = 0;
+                    
+                    while (pollCount < 60) { // Max 60 polls (1 minute)
+                        await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second
+                        pollCount++;
+                        
+                        const statusDomain = `${sessionId}.status.qp.ch.at`;
+                        const statusResponse = await dnsQuery(statusDomain);
+                        
+                        log(`Status response (attempt ${pollCount}): ${statusResponse[0].substring(0, 50)}...`, 'info');
+                        
+                        if (statusResponse[0] === 'PROCESSING') {
+                            if (pollCount % 5 === 0) {
+                                log(`Still processing... (${pollCount}s)`, 'info');
+                            }
+                            continue;
+                        }
+                        
+                        // Response is ready - it contains the first page
+                        try {
+                            const encryptedData = nacl.util.decodeBase64(statusResponse[0]);
+                            
+                            // Derive XOR key for first response page
+                            const context = 'response:page:0';
+                            const xorKey = await deriveXORKey(sharedSecret, context, encryptedData.length);
+                            
+                            // Decrypt with XOR
+                            const decrypted = xorDecrypt(encryptedData, xorKey);
+                            firstPageData = new TextDecoder().decode(decrypted);
+                            
+                            const pageMatch = firstPageData.match(/\[Page (\d+)\/(\d+)\]/);
+                            totalPages = pageMatch ? parseInt(pageMatch[2]) : 1;
+                            break;
+                        } catch (e) {
+                            log(`Error decrypting first page: ${e.message}`, 'error');
+                            throw e;
+                        }
+                    }
+                    
+                    if (!firstPageData) {
+                        throw new Error('Query processing timed out after 60 seconds');
+                    }
+                    
+                    metrics.execute = pollCount * 1000; // Convert to ms
+                    
+                } else {
+                    // Direct response (backward compatibility)
+                    try {
+                        const encryptedData = nacl.util.decodeBase64(execResponse[0]);
+                        
+                        // Derive XOR key for first response page
+                        const context = 'response:page:0';
+                        const xorKey = await deriveXORKey(sharedSecret, context, encryptedData.length);
+                        
+                        // Decrypt with XOR
+                        const decrypted = xorDecrypt(encryptedData, xorKey);
+                        firstPageData = new TextDecoder().decode(decrypted);
+                        
+                        const pageMatch = firstPageData.match(/\[Page (\d+)\/(\d+)\]/);
+                        totalPages = pageMatch ? parseInt(pageMatch[2]) : 1;
+                    } catch (e) {
+                        log(`Error decrypting first page: ${e.message}`, 'error');
+                        throw e;
+                    }
+                }
+                
+                log(`Response has ${totalPages} pages`, 'info');
+                updatePhase('Query Execution', `
+                    <div class="metric">Execution time: ${metrics.execute}ms</div>
+                    <div class="metric">Response pages: ${totalPages}</div>
+                `);
+
+                // Phase 4: Fetch Response Pages
+                addPhase('Response Collection', 'Fetching paginated response from server');
+                let fullResponse = firstPageData.replace(/\[Page \d+\/\d+\]/, '');
+                document.getElementById('responsePagesLog').textContent += `Page 1/${totalPages}: ${fullResponse.substring(0, 50)}...\n`;
+                
+                let responsePagesHtml = `<div class="metric">Page 1: 0ms (included in exec)</div>`;
+                
+                for (let i = 2; i <= totalPages; i++) {
+                    const pageDomain = `${sessionId}.page.${i}.qp.ch.at`;
+                    
+                    const pageStart = Date.now();
+                    const pageResponse = await dnsQuery(pageDomain);
+                    const pageDuration = Date.now() - pageStart;
+                    metrics.responsePages.push(pageDuration);
+                    
+                    // Decode and decrypt page response
+                    let pageContent;
+                    try {
+                        const encryptedData = nacl.util.decodeBase64(pageResponse[0]);
+                        
+                        // Derive XOR key for this response page (0-indexed on server)
+                        const context = `response:page:${i - 1}`;
+                        const xorKey = await deriveXORKey(sharedSecret, context, encryptedData.length);
+                        
+                        // Decrypt with XOR
+                        const decrypted = xorDecrypt(encryptedData, xorKey);
+                        const decryptedStr = new TextDecoder().decode(decrypted);
+                        pageContent = decryptedStr.replace(/\[Page \d+\/\d+\]/, '');
+                    } catch (e) {
+                        log(`Error decrypting page ${i}: ${e.message}`, 'error');
+                        throw e;
+                    }
+                    fullResponse += pageContent;
+                    
+                    document.getElementById('responsePagesLog').textContent += `Page ${i}/${totalPages}: ${pageContent.substring(0, 50)}...\n`;
+                    responsePagesHtml += `<div class="metric">Page ${i}: ${pageDuration}ms</div>`;
+                }
+                
+                updatePhase('Response Collection', responsePagesHtml + `
+                    <div class="metric">Total fetched: ${totalPages}</div>
+                    <div class="metric">Avg time: ${metrics.responsePages.length > 0 ? Math.round(metrics.responsePages.reduce((a, b) => a + b, 0) / metrics.responsePages.length) : 0}ms</div>
+                `);
+
+                // Display final response
+                document.getElementById('finalResponse').textContent = fullResponse;
+                
+                // Update final stats
+                updateStats();
+                
+                // Create timing visualization
+                createTimingChart();
+                
+                log('=== Protocol completed successfully ===', 'success');
+                
+            } catch (error) {
+                log(`Protocol failed: ${error.message}`, 'error');
+                if (error.stack) {
+                    log(`Stack trace: ${error.stack}`, 'error');
+                }
+                updateStats();
+            }
+        }
+
+        function createTimingChart() {
+            const chart = document.getElementById('timingChart');
+            chart.innerHTML = '<h4 style="margin: 0 0 10px 0; font-size: 13px;">Timing Breakdown</h4>';
+            
+            const phases = [
+                { name: 'Session Init', duration: metrics.sessionInit },
+                { name: 'Query Pages', duration: metrics.queryPages.reduce((a, b) => a + b, 0) },
+                { name: 'Execute', duration: metrics.execute },
+                { name: 'Response Pages', duration: metrics.responsePages.reduce((a, b) => a + b, 0) }
+            ];
+            
+            const maxDuration = Math.max(...phases.map(p => p.duration));
+            
+            phases.forEach(phase => {
+                const div = document.createElement('div');
+                div.className = 'timing-chart';
+                div.innerHTML = `
+                    <span style="width: 100px; display: inline-block; font-size: 11px;">${phase.name}:</span>
+                    <div class="timing-bar" style="width: ${(phase.duration / maxDuration) * 200}px; font-size: 10px;">
+                        ${phase.duration}ms
+                    </div>
+                `;
+                chart.appendChild(div);
+            });
+        }
+
+        function loadExample(type) {
+            const queryInput = document.getElementById('queryInput');
+            if (!queryInput) {
+                console.error('Query input element not found');
+                return;
+            }
+            const examples = {
+                tiny: 'what is DNS',
+                simple: 'explain how DNS works in detail',
+                medium: 'Write a comprehensive guide about DNS including: how domain names are resolved, the role of root servers and TLD servers, recursive vs iterative queries, DNS caching and TTL, common record types like A, AAAA, MX, TXT, CNAME, how DNS security works with DNSSEC, and common DNS attacks and mitigations.',
+                large: 'Please provide an extremely detailed and comprehensive analysis of quantum computing including: The fundamental quantum mechanical principles like superposition and entanglement, how qubits function differently from classical bits, the concept of quantum gates and circuits, major quantum algorithms including Shor\'s algorithm for factoring and Grover\'s search algorithm, the challenges of quantum decoherence and error correction, current approaches to building quantum computers including superconducting qubits and trapped ions, potential applications in cryptography and drug discovery, the current state of quantum supremacy claims, comparison with classical computing paradigms, the role of quantum error correction codes, topological quantum computing, quantum annealing vs gate-based quantum computing, and the timeline for practical quantum computers.',
+                huge: 'Write an exhaustive technical deep-dive into modern large language models covering: ' +
+                      'The complete transformer architecture with detailed explanations of multi-head attention, positional encoding, layer normalization, and feed-forward networks. ' +
+                      'The mathematics behind attention mechanisms including scaled dot-product attention and the quadratic complexity problem. ' +
+                      'Tokenization strategies including BPE, WordPiece, and SentencePiece with their trade-offs. ' +
+                      'Embedding layers and how semantic meaning is encoded in high-dimensional spaces. ' +
+                      'Pre-training objectives like masked language modeling, next sentence prediction, and newer approaches like ELECTRA and T5. ' +
+                      'The training process including optimization algorithms, learning rate schedules, gradient accumulation, and distributed training strategies. ' +
+                      'Fine-tuning methodologies including full fine-tuning, adapter layers, LoRA, and prompt tuning. ' +
+                      'Inference optimization techniques such as quantization, pruning, knowledge distillation, and specialized hardware acceleration. ' +
+                      'Scaling laws and emergent abilities in large models. ' +
+                      'The role of instruction tuning and RLHF in creating helpful assistants. ' +
+                      'Challenges like hallucination, bias, and safety considerations. ' +
+                      'Recent advances including sparse models, retrieval-augmented generation, and multimodal transformers. ' +
+                      'The computational requirements and environmental impact of training large models. ' +
+                      'Future directions including more efficient architectures, better reasoning capabilities, and potential paths to AGI.'
+            };
+            
+            queryInput.value = examples[type] || '';
+        }
+    </script>
+    <script>
+        // Set up event handlers after DOM is loaded
+        document.addEventListener('DOMContentLoaded', function() {
+            const executeBtn = document.getElementById('executeBtn');
+            if (executeBtn) {
+                executeBtn.addEventListener('click', executeQuery);
+            }
+            
+            // Set default query
+            const queryInput = document.getElementById('queryInput');
+            if (queryInput && !queryInput.value) {
+                queryInput.value = 'what is DNS';
+            }
+        });
+    </script>
+</body>
+</html>
