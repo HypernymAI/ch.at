@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
-	"log"
 	"os"
 	"strconv"
 )
@@ -35,20 +34,20 @@ func getServiceConfig(serviceName string) ServiceConfig {
 func getServiceModel(serviceName string) string {
 	// First try service-specific model (e.g., DNS_LLM_MODEL)
 	serviceModel := os.Getenv(serviceName + "_LLM_MODEL")
-	log.Printf("[getServiceModel] %s_LLM_MODEL = '%s'", serviceName, serviceModel)
+	// Service-specific model found
 	if serviceModel != "" {
 		return serviceModel
 	}
 	
 	// Fall back to BASIC_OPENAI_MODEL (baseline fallback)
 	basicModel := os.Getenv("BASIC_OPENAI_MODEL")
-	log.Printf("[getServiceModel] BASIC_OPENAI_MODEL = '%s'", basicModel)
+	// Using basic model
 	if basicModel != "" {
 		return basicModel
 	}
 	
 	// Final fallback - will use default model from router
-	log.Printf("[getServiceModel] Using final fallback: llama-8b")
+	// Using fallback model
 	return "llama-8b"
 }
 

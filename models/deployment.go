@@ -25,6 +25,9 @@ type Deployment struct {
 	Status  DeploymentStatus  `json:"status"`
 	Metrics DeploymentMetrics `json:"metrics"`
 
+	// Parameters for the deployment (e.g., minimum_functional_tokens)
+	Parameters map[string]interface{} `json:"parameters" yaml:"parameters"`
+
 	// Metadata
 	Tags      map[string]string `json:"tags" yaml:"tags"`
 	CreatedAt time.Time         `json:"created_at" yaml:"created_at"`

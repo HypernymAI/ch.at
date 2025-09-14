@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -140,8 +139,7 @@ func (o *OneAPIProvider) Execute(ctx context.Context, req *ProviderRequest) (*Pr
 
 // TranslateResponse converts OneAPI response to unified format
 func (o *OneAPIProvider) TranslateResponse(ctx context.Context, resp *ProviderResponse, deployment *models.Deployment) (*UnifiedResponse, error) {
-	// Debug log the raw response
-	log.Printf("[OneAPI] Raw response for %s: %s", deployment.ProviderModelID, string(resp.Body))
+	// Process response
 	
 	// OneAPI already returns OpenAI-compatible format
 	var unifiedResp UnifiedResponse

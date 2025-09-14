@@ -51,23 +51,40 @@ models:
     family: "claude"
     version: "4.1"
     capabilities:
-      max_tokens: 8192
+      max_tokens: 65536
       context_window: 200000
       supports_vision: true
       supports_functions: true
       supports_streaming: true
       supports_json: true
     deployments:
-      - claude-4.1-opus-oneapi-anthropic
+      - claude-4.1-opus-oneapi-bedrock
     tags:
       tier: "frontier"
       
+  claude-4-sonnet:
+    name: "Claude 4 Sonnet"
+    family: "claude"
+    version: "4.0-sonnet"
+    capabilities:
+      max_tokens: 65536
+      context_window: 200000
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - claude-4-sonnet-oneapi-bedrock
+    tags:
+      tier: "frontier"
+      use_case: "advanced"
+
   claude-4-opus:
     name: "Claude 4 Opus"
     family: "claude"
     version: "4.0-opus"
     capabilities:
-      max_tokens: 4096
+      max_tokens: 65536
       context_window: 200000
       supports_vision: true
       supports_functions: false
@@ -79,7 +96,7 @@ models:
       tokenizer_type: "claude"
       languages: ["all"]
     deployments:
-      - claude-4-opus-oneapi-anthropic
+      - claude-4-opus-oneapi-bedrock
     tags:
       tier: "premium"
       use_case: "analysis"
@@ -111,7 +128,7 @@ models:
     family: "claude"
     version: "3.7-sonnet"
     capabilities:
-      max_tokens: 8192
+      max_tokens: 131072
       context_window: 200000
       supports_vision: true
       supports_functions: true
@@ -123,7 +140,7 @@ models:
       tokenizer_type: "claude"
       languages: ["all"]
     deployments:
-      - claude-3.7-sonnet-oneapi-anthropic
+      - claude-3.7-sonnet-oneapi-bedrock
     tags:
       tier: "balanced"
       use_case: "balanced"
@@ -133,7 +150,7 @@ models:
     family: "claude"
     version: "3.5-haiku"
     capabilities:
-      max_tokens: 4096
+      max_tokens: 8192
       context_window: 200000
       supports_vision: true
       supports_functions: false
@@ -145,7 +162,7 @@ models:
       tokenizer_type: "claude"
       languages: ["all"]
     deployments:
-      - claude-3.5-haiku-oneapi-anthropic
+      - claude-3.5-haiku-oneapi-bedrock
     tags:
       tier: "economy"
       use_case: "fast"
@@ -205,13 +222,30 @@ models:
       use_case: "complex"
 
   # Gemini Models
-  gemini-flash:
+  gemini-1.5-flash:
+    name: "Gemini 1.5 Flash"
+    family: "gemini"
+    version: "1.5-flash"
+    capabilities:
+      max_tokens: 8192
+      context_window: 2097152
+      supports_vision: true
+      supports_functions: true
+      supports_streaming: true
+      supports_json: true
+    deployments:
+      - gemini-1.5-flash-oneapi-google
+    tags:
+      tier: "fast"
+      use_case: "general"
+
+  gemini-2.5-flash:
     name: "Gemini 2.5 Flash"
     family: "gemini"
     version: "2.5-flash"
     capabilities:
-      max_tokens: 128000
-      context_window: 128000
+      max_tokens: 65536
+      context_window: 1048576
       supports_vision: true
       supports_functions: true
       supports_streaming: true
@@ -219,16 +253,16 @@ models:
     deployments:
       - gemini-2.5-flash-oneapi-google
     tags:
-      tier: "fast"
+      tier: "balanced"
       use_case: "general"
 
-  gemini-pro:
+  gemini-2.5-pro:
     name: "Gemini 2.5 Pro"
     family: "gemini"
     version: "2.5-pro"
     capabilities:
-      max_tokens: 128000
-      context_window: 128000
+      max_tokens: 65536
+      context_window: 1048576
       supports_vision: true
       supports_functions: true
       supports_streaming: true
@@ -240,7 +274,7 @@ models:
       use_case: "complex"
 
   # Additional GPT Models
-  gpt-nano:
+  gpt-4.1-nano:
     name: "GPT-4.1 Nano"
     family: "gpt"
     version: "4.1-nano"
@@ -269,7 +303,7 @@ models:
       supports_streaming: true
       supports_json: true
     deployments:
-      - gpt-4.1-mini-oneapi-openai
+      - gpt-4.1-mini-oneapi-azure-gpt
     tags:
       tier: "balanced"
       use_case: "general"
@@ -286,7 +320,7 @@ models:
       supports_streaming: true
       supports_json: true
     deployments:
-      - gpt-4.1-full-oneapi-openai
+      - gpt-4.1-full-oneapi-azure-gpt
     tags:
       tier: "frontier"
       use_case: "complex"
@@ -303,7 +337,7 @@ models:
       supports_streaming: true
       supports_json: true
     deployments:
-      - gpt-5-chat-oneapi-openai
+      - gpt-5-chat-oneapi-azure-gpt
     tags:
       tier: "frontier"
       use_case: "advanced"
@@ -320,7 +354,7 @@ models:
       supports_streaming: true
       supports_json: true
     deployments:
-      - gpt-5-nano-oneapi-openai
+      - gpt-5-nano-oneapi-azure-gpt
     tags:
       tier: "fast"
       use_case: "simple"
@@ -337,7 +371,7 @@ models:
       supports_streaming: true
       supports_json: true
     deployments:
-      - gpt-5-mini-oneapi-openai
+      - gpt-5-mini-oneapi-azure-gpt
     tags:
       tier: "balanced"
       use_case: "general"

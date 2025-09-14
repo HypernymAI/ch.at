@@ -40,7 +40,6 @@ func LLMWithRouter(input interface{}, requestedModel string, params *RouterParam
 
 // LLMWithRouterConv calls the language model with conversation tracking
 func LLMWithRouterConv(input interface{}, requestedModel string, conversationID string, params *RouterParams, stream chan<- string) (*LLMResponse, error) {
-	log.Printf("[LLMWithRouter] Starting routing for model: %s, convID: %s", requestedModel, conversationID)
 	log.Printf("[AUDIT] LLMWithRouterConv called with model=%s, convID=%s", requestedModel, conversationID)
 
 	// Build unified request
@@ -76,8 +75,7 @@ func LLMWithRouterConv(input interface{}, requestedModel string, conversationID 
 		params.Temperature = 0.7
 	}
 	
-	log.Printf("[LLMWithRouter] Using params: MaxTokens=%d, Temperature=%f, TopP=%f", 
-		params.MaxTokens, params.Temperature, params.TopP)
+	// Using params
 	
 	// Create unified request
 	unifiedReq := &providers.UnifiedRequest{
@@ -100,7 +98,7 @@ func LLMWithRouterConv(input interface{}, requestedModel string, conversationID 
 	decision, err := modelRouter.RouteRequest(context.Background(), requestedModel, reqCtx)
 	if err != nil {
 		// NO FALLBACK! FAIL PROPERLY!
-		log.Printf("[LLMWithRouter] Routing failed for model %s: %v", requestedModel, err)
+		// Routing failed
 		
 		// Log the failure to audit
 		LogLLMInteraction(
@@ -119,10 +117,31 @@ func LLMWithRouterConv(input interface{}, requestedModel string, conversationID 
 		return nil, fmt.Errorf("model '%s' not found in routing system: %v", requestedModel, err)
 	}
 
-	log.Printf("[LLMWithRouter] Selected deployment: %s (provider: %s, model: %s)",
-		decision.Primary.ID,
-		decision.Primary.Provider,
-		decision.Primary.ProviderModelID)
+	// Selected deployment
+
+	// Apply minimum_functional_tokens if configured for this deployment
+	if decision.Primary.Parameters != nil {
+		if minTokens, ok := decision.Primary.Parameters["minimum_functional_tokens"]; ok {
+			var minTokensInt int
+			switch v := minTokens.(type) {
+			case float64:
+				minTokensInt = int(v)
+			case int:
+				minTokensInt = v
+			case int64:
+				minTokensInt = int(v)
+			default:
+				// Unexpected type
+			}
+			
+			if minTokensInt > 0 && params.MaxTokens < minTokensInt {
+				// Apply minimum tokens
+				params.MaxTokens = minTokensInt
+				// Update the unified request with the new max tokens
+				unifiedReq.MaxTokens = minTokensInt
+			}
+		}
+	}
 
 	// Create response object
 	response := &LLMResponse{
@@ -162,14 +181,14 @@ func LLMWithRouterConv(input interface{}, requestedModel string, conversationID 
 		}
 
 		// Extract content from response
-		log.Printf("[LLMWithRouter] Response has %d choices", len(unifiedResp.Choices))
+		// Response received
 		if len(unifiedResp.Choices) > 0 {
 			response.Content = unifiedResp.Choices[0].Message.Content
-			log.Printf("[LLMWithRouter] Extracted content: %q (length: %d)", response.Content, len(response.Content))
+			// Content extracted
 			response.OutputHash = generateSignature(response.Content)
 			response.FinishReason = unifiedResp.Choices[0].FinishReason
 		} else {
-			log.Printf("[LLMWithRouter] WARNING: No choices in response!")
+			// No choices in response
 		}
 
 		// Use token counts from response if available
@@ -234,7 +253,7 @@ func handleStreamingWithRouter(req *providers.UnifiedRequest, decision *routing.
 	go func() {
 		err := provider.Stream(ctx, providerReq, providerStream)
 		if err != nil {
-			log.Printf("[LLMWithRouter] Stream error: %v", err)
+			// Stream error
 		}
 	}()
 
@@ -267,11 +286,11 @@ func UpdateLLMFunction() {
 	// Check if router is initialized
 	if modelRouter != nil && modelRegistry != nil && deploymentRegistry != nil {
 		// We have routing available
-		log.Println("[UpdateLLMFunction] Model routing system is available")
+		// Model routing system available
 		
 		// Note: In production, you would replace the LLM function
 		// For now, we keep both and let handleChatCompletions decide
 	} else {
-		log.Println("[UpdateLLMFunction] Model routing system not initialized, using legacy LLM")
+		// Using legacy LLM
 	}
 }

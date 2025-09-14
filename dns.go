@@ -10,6 +10,7 @@ import (
 )
 
 func StartDNSServer(port int) error {
+	log.Printf("[DNS] Starting DNS server on port %d", port)
 	dns.HandleFunc("ch.at.", handleDNS)
 	dns.HandleFunc(".", handleDNS)
 
@@ -18,6 +19,7 @@ func StartDNSServer(port int) error {
 		Net:  "udp",
 	}
 
+	log.Printf("[DNS] DNS server listening on :%d", port)
 	return server.ListenAndServe()
 }
 

@@ -1,3 +1,5 @@
+//go:build !with_ajaxish
+
 package main
 
 import (
@@ -5,14 +7,90 @@ import (
 	"fmt"
 	"html"
 	"io"
-	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
+// Session tracking to prevent duplicate message processing
+var (
+	sessionSeqs = make(map[string]int)
+	sessionMu   sync.RWMutex
+	
+	// BILLING PROTECTION: Track requests per IP to prevent runaway costs
+	ipRequestCounts = make(map[string]int)
+	ipRequestMu     sync.RWMutex
+	lastResetTime   = time.Now()
+)
+
 const htmlPromptPrefix = "You are a helpful assistant. Use HTML formatting instead of markdown (no CSS or style attributes): "
+
+// buildModelTable generates the model selection radio button table
+func buildModelTable(selectedModel string) string {
+	modelTable := "<table class='model-radio-table'><tr><th>Provider</th><th>Models</th></tr>"
+	
+	if selectedModel == "" {
+		selectedModel = os.Getenv("BASIC_OPENAI_MODEL")
+		if selectedModel == "" {
+			selectedModel = "llama-8b"
+		}
+	}
+	
+	if modelRegistry != nil {
+		type providerGroup struct{
+			Emoji string
+			Name string
+			Models []string
+		}
+		providerGroups := map[string]*providerGroup{
+			"meta": {"🔷", "Meta", []string{}},
+			"openai": {"🟢", "OpenAI", []string{}},
+			"anthropic": {"🟠", "Anthropic", []string{}},
+			"google": {"🔵", "Google", []string{}},
+		}
+		
+		allModels := modelRegistry.List()
+		for _, m := range allModels {
+			switch m.Family {
+			case "gpt":
+				providerGroups["openai"].Models = append(providerGroups["openai"].Models, m.ID)
+			case "claude":
+				providerGroups["anthropic"].Models = append(providerGroups["anthropic"].Models, m.ID)
+			case "gemini":
+				providerGroups["google"].Models = append(providerGroups["google"].Models, m.ID)
+			case "llama":
+				providerGroups["meta"].Models = append(providerGroups["meta"].Models, m.ID)
+			}
+		}
+		
+		for _, providerKey := range []string{"meta", "openai", "anthropic", "google"} {
+			group := providerGroups[providerKey]
+			if len(group.Models) > 0 {
+				modelTable += fmt.Sprintf("<tr><td>%s %s</td><td>", group.Emoji, group.Name)
+				for _, modelID := range group.Models {
+					checked := ""
+					if modelID == selectedModel {
+						checked = "checked"
+					}
+					modelTable += fmt.Sprintf(`<label><input type="radio" name="model" value="%s" %s> %s</label> `,
+						modelID, checked, modelID)
+				}
+				modelTable += "</td></tr>"
+			}
+		}
+	} else {
+		checked := ""
+		if selectedModel == "llama-8b" {
+			checked = "checked"
+		}
+		modelTable += fmt.Sprintf(`<tr><td>🔷 Meta</td><td><label><input type="radio" name="model" value="llama-8b" %s> llama-8b</label></td></tr>`, checked)
+	}
+	modelTable += "</table>"
+	return modelTable
+}
 
 // RequestTelemetry holds comprehensive telemetry data for a request
 type RequestTelemetry struct {
@@ -70,8 +148,56 @@ const htmlHeader = `<!DOCTYPE html>
     <title>ch.at</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        body { text-align: center; margin: 2.5rem; font-family: system-ui, -apple-system, sans-serif; background: #FFF8F0; color: #2C1F3D; }
-        .chat { text-align: left; max-width: 700px; margin: 1.25rem auto; }
+        html { height: 100%; scroll-behavior: smooth; }
+        body { 
+            margin: 0;
+            padding: 0;
+            font-family: system-ui, -apple-system, sans-serif; 
+            background: #FFF8F0; 
+            color: #2C1F3D;
+            text-align: center;
+            min-height: 100vh;
+        }
+        .main-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            overflow: hidden;
+        }
+        .page-content {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            padding: 2.5rem;
+            padding-bottom: 1rem;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        .header-section {
+            flex-shrink: 0;
+        }
+        .chat { 
+            text-align: left; 
+            max-width: 700px; 
+            margin: 1.25rem auto;
+            width: 100%;
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+        /* Auto-scroll hack using pseudo-element */
+        .chat::after {
+            content: '';
+            display: block;
+            height: 0;
+            clear: both;
+        }
+        .footer-section {
+            flex-shrink: 0;
+            background: #FFF8F0;
+            border-top: 1px solid #E8DCC4;
+            padding: 1rem 2.5rem 2.5rem;
+        }
         .q { padding: 1.25rem; background: #E8DCC4; font-style: italic; font-size: large; border-left: 4px solid #6B4C8A; }
         .a { 
             padding: 1.5rem 1.25rem; 
@@ -81,7 +207,7 @@ const htmlHeader = `<!DOCTYPE html>
             border-radius: 8px;
             border: 1px solid #E8DCC4;
         }
-        form { max-width: 700px; margin: 0 auto 3rem; }
+        form { max-width: 700px; margin: 0 auto; padding: 0.75rem 2.5rem; }
         .input-row { display: flex; gap: .5rem; margin-bottom: .5rem; }
         input[type="text"] { 
             width: 100%; 
@@ -124,7 +250,7 @@ const htmlHeader = `<!DOCTYPE html>
         /* Mode toggle */
         .mode-toggle {
             display: flex;
-            justify-content: center;
+            justify-content: flex-start;
             gap: 1rem;
             margin: 1rem 0;
             font-size: 0.9rem;
@@ -321,6 +447,65 @@ const htmlHeader = `<!DOCTYPE html>
         .tier-selection label { cursor: pointer; }
         .tier-selection input[type="radio"] { cursor: pointer; }
         
+        /* Model radio table */
+        .model-radio-table {
+            width: 100%;
+            max-width: 700px;
+            margin: 1rem auto;
+            border-collapse: collapse;
+            text-align: left;
+        }
+        
+        /* Model selection INSIDE form but positioned below viewport */
+        #model-selection {
+            position: absolute;
+            top: calc(100vh + 10rem);
+            left: 0;
+            right: 0;
+            background: #FFF8F0;
+            padding: 2rem;
+            min-height: 100vh;
+        }
+        .model-radio-table th {
+            text-align: left;
+            padding: 0.5rem;
+            border-bottom: 2px solid #6B4C8A;
+            font-weight: 600;
+        }
+        .model-radio-table td {
+            padding: 0.75rem;
+            vertical-align: top;
+            border-bottom: 1px solid #E8DCC4;
+            text-align: left;
+        }
+        .model-radio-table td:first-child {
+            width: 120px;
+            font-weight: 500;
+            text-align: left;
+        }
+        .model-radio-table label {
+            display: inline-block;
+            margin: 0.25rem 0.5rem 0.25rem 0;
+            padding: 0.25rem 0.5rem;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .model-radio-table label:hover {
+            background: #f5f5f5;
+            border-color: #6B4C8A;
+        }
+        .model-radio-table input[type="radio"] {
+            margin-right: 0.25rem;
+        }
+        .model-radio-table input[type="radio"]:checked + label,
+        .model-radio-table label:has(input:checked) {
+            background: #6B4C8A;
+            color: white;
+            border-color: #6B4C8A;
+        }
+        
         /* Control visibility */
         #advanced-controls { display: block; }
         #simplified-controls { display: none; }
@@ -347,448 +532,54 @@ const htmlHeader = `<!DOCTYPE html>
         }
     </style>
 </head>
-<body>
-    <h1>ch.at</h1>
-    <p>Universal Basic Intelligence</p>
-    <p><small><i>pronounced "ch-dot-at"</i></small></p>
-    <div class="chat">`
+<body onload="var c=document.querySelector('.chat');if(c)c.scrollTop=c.scrollHeight;">
+    <div class="main-container">
+    <div class="page-content">
+        <div class="header-section">
+            <h1>ch.at</h1>
+            <p>Universal Basic Intelligence</p>
+            <p><small><i>pronounced "ch-dot-at"</i></small></p>
+        </div>
+        <div class="chat">`
 
 const htmlFooterTemplate = `</div>
-    <!-- Mode Toggle -->
-    <div class="mode-toggle">
-        <input type="radio" id="mode-advanced" name="ui-mode" value="advanced" %s>
-        <label for="mode-advanced">⚙️ Advanced</label>
-        
-        <input type="radio" id="mode-simplified" name="ui-mode" value="simplified" %s>
-        <label for="mode-simplified">⚡ Simplified</label>
     </div>
-    
-    <!-- Advanced Mode Controls -->
-    <div id="advanced-controls" class="%s">
-        <div class="provider-select">
-            <div class="provider-dropdown" onclick="toggleProviderDropdown()">
-                <span class="provider-dot">%s</span>
-                <span class="provider-name">%s</span>
-                <span style="margin-left: auto;">▼</span>
-            </div>
-            <div class="provider-options" id="provider-options"></div>
-        </div>
-        
-        <div class="model-select">
-            <select id="model-dropdown" class="model-dropdown" name="adv_model">
-                %s
-            </select>
-        </div>
-    </div>
-    
-    <!-- Simplified Mode Controls -->
-    <div id="simplified-controls" class="%s">
-        <div class="tier-selection">
-            <label><input type="radio" name="tier" value="fast" %s> ⚡ Fast</label>
-            <label><input type="radio" name="tier" value="balanced" %s> ⚖️ Balanced</label>
-            <label><input type="radio" name="tier" value="frontier" %s> 🚀 Frontier</label>
-        </div>
-    </div>
-    
-    <form id="chat-form" onsubmit="sendMessage(event); return false;">
-        <input type="hidden" name="mode" id="mode-input" value="%s">
-        <input type="hidden" name="provider" id="provider-input" value="%s">
-        <input type="hidden" name="model" id="model-input" value="%s">
-        <input type="hidden" name="session_id" id="session-input" value="%s">
+    <div class="footer-section">
+    <form method="POST" action="/" id="chat-form">
         <div class="input-row">
-            <input type="text" name="q" id="query-input" placeholder="Type your message..." autofocus>
-            <input type="submit" value="Send" id="send-button">
+            <input type="text" name="q" placeholder="Type your message..." autofocus>
+            <input type="submit" value="Send">
         </div>
-        <textarea name="h" id="history-input" style="display:none">%s</textarea>
+        <textarea name="h" style="display:none">%s</textarea>
+        <input type="hidden" name="session" value="%s">
+        <input type="hidden" name="seq" value="%d">
+        
+        <!-- Model Selection INSIDE form but positioned below viewport -->
+        <div id="model-selection">
+            <div class="model-table">
+                %s
+            </div>
+            <p style="text-align: center; margin: 2rem 0;">
+                <a href="#" style="padding: 0.5rem 1rem; border: 1px solid #6B4C8A; border-radius: 8px; text-decoration: none; color: #6B4C8A; display: inline-block;">
+                    ch.at now! ↑
+                </a>
+            </p>
+        </div>
     </form>
     
-    <p><a href="#" onclick="localStorage.removeItem('chat_conversation'); localStorage.removeItem('conversation_id'); conversationMetadata.conversationId = null; document.querySelector('.chat').innerHTML = ''; return false;">New Chat</a></p>
+    <p id="footer-top"><a href="/">New Chat</a></p>
     <p><small>
         Also available: ssh ch.at • curl ch.at/?q=hello • dig @ch.at "question" TXT<br>
         No logs • No accounts • Free software • <a href="https://github.com/Deep-ai-inc/ch.at">GitHub</a>
     </small></p>
+    <p style="margin: 0.5rem 0;">
+        <a href="#model-selection" style="padding: 0.4rem 0.8rem; border: 1px solid #6B4C8A; border-radius: 8px; text-decoration: none; color: #6B4C8A; display: inline-block; font-size: 0.9rem;">
+            Model Selection ↓
+        </a>
+    </p>
     
-    <script>
-        // Provider data with branding - dynamically generated from registry
-        const providers = %s;
-        
-        // Response metadata storage
-        const conversationMetadata = {
-            sessionId: document.getElementById('session-input').value || generateSessionId(),
-            conversationId: null,  // Will be set on first message
-            responses: {},
-            currentMode: document.getElementById('mode-input').value || 'advanced'
-        };
-        
-        // Load conversation from localStorage
-        function loadConversation() {
-            const saved = localStorage.getItem('chat_conversation');
-            if (saved) {
-                const conversation = JSON.parse(saved);
-                const chatDiv = document.querySelector('.chat');
-                chatDiv.innerHTML = ''; // Clear existing
-                
-                conversation.messages.forEach(msg => {
-                    if (msg.type === 'question') {
-                        const qDiv = document.createElement('div');
-                        qDiv.className = 'q';
-                        qDiv.textContent = msg.content;
-                        chatDiv.appendChild(qDiv);
-                    } else if (msg.type === 'answer') {
-                        const aDiv = document.createElement('div');
-                        aDiv.className = 'a';
-                        aDiv.innerHTML = msg.content;
-                        
-                        // Add badge
-                        const badgeHTML = '<div class="model-badge provider-' + msg.provider.toLowerCase() + '">' +
-                            '<button class="badge-toggle" onclick="toggleMetadata(\'' + msg.id + '\')">' +
-                                '<span class="provider-dot">' + msg.providerEmoji + '</span>' +
-                                '<span class="model-name">' + msg.model + '</span>' +
-                                '<span class="expand-icon">▼</span>' +
-                            '</button>' +
-                            '<div class="metadata-panel" id="metadata-' + msg.id + '">' +
-                                '<table class="metadata-table">' +
-                                    '<tr><td>Model:</td><td>' + msg.model + '</td></tr>' +
-                                    '<tr><td>Provider:</td><td>' + msg.provider + '</td></tr>' +
-                                    '<tr><td>Time:</td><td>' + msg.timestamp + '</td></tr>' +
-                                '</table>' +
-                            '</div>' +
-                        '</div>';
-                        
-                        aDiv.innerHTML = msg.content + badgeHTML;
-                        chatDiv.appendChild(aDiv);
-                    }
-                });
-            }
-        }
-        
-        // Save conversation to localStorage
-        function saveConversation() {
-            const messages = [];
-            const chatDiv = document.querySelector('.chat');
-            const questions = chatDiv.querySelectorAll('.q');
-            const answers = chatDiv.querySelectorAll('.a');
-            
-            questions.forEach((q, i) => {
-                messages.push({
-                    type: 'question',
-                    content: q.textContent
-                });
-                
-                if (answers[i]) {
-                    // Extract model info from badge
-                    const badge = answers[i].querySelector('.model-badge');
-                    const modelName = answers[i].querySelector('.model-name');
-                    const providerDot = answers[i].querySelector('.provider-dot');
-                    
-                    // Get clean content without badge HTML
-                    const content = answers[i].innerHTML.split('<div class="model-badge')[0];
-                    
-                    messages.push({
-                        type: 'answer',
-                        content: content,
-                        model: modelName ? modelName.textContent : 'llama-8b',
-                        provider: badge ? badge.className.replace('model-badge provider-', '') : 'meta',
-                        providerEmoji: providerDot ? providerDot.textContent : '🔷',
-                        timestamp: new Date().toLocaleTimeString(),
-                        id: 'msg_' + Date.now() + '_' + i
-                    });
-                }
-            });
-            
-            localStorage.setItem('chat_conversation', JSON.stringify({
-                sessionId: conversationMetadata.sessionId,
-                messages: messages
-            }));
-        }
-        
-        // Load on page load ONLY if chat is empty (no server-rendered content)
-        window.addEventListener('DOMContentLoaded', function() {
-            const chatDiv = document.querySelector('.chat');
-            if (!chatDiv || chatDiv.children.length === 0) {
-                loadConversation();
-            }
-        });
-        
-        // AJAX message sending
-        async function sendMessage(event) {
-            event.preventDefault();
-            
-            const queryInput = document.getElementById('query-input');
-            const query = queryInput.value.trim();
-            if (!query) return;
-            
-            // Disable form while sending
-            queryInput.disabled = true;
-            document.getElementById('send-button').disabled = true;
-            
-            // Add question to chat
-            const chatDiv = document.querySelector('.chat');
-            const questionDiv = document.createElement('div');
-            questionDiv.className = 'q';
-            questionDiv.textContent = query;
-            chatDiv.appendChild(questionDiv);
-            
-            // Create answer div
-            const answerDiv = document.createElement('div');
-            answerDiv.className = 'a';
-            chatDiv.appendChild(answerDiv);
-            
-            // Get current settings
-            const mode = document.getElementById('mode-input').value;
-            const provider = document.getElementById('provider-input').value;
-            const model = document.getElementById('model-input').value;
-            const history = document.getElementById('history-input').value;
-            
-            try {
-                // Generate conversation ID on first message
-                if (!conversationMetadata.conversationId) {
-                    const historyCount = document.querySelectorAll('.q').length;
-                    if (historyCount <= 1) {  // This is the first message
-                        conversationMetadata.conversationId = 'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                        localStorage.setItem('conversation_id', conversationMetadata.conversationId);
-                    } else {
-                        // Try to get existing conversation ID from localStorage
-                        conversationMetadata.conversationId = localStorage.getItem('conversation_id') || 
-                            'conv_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-                    }
-                }
-                
-                // Make AJAX request with URL-encoded data
-                const params = new URLSearchParams();
-                params.append('q', query);
-                params.append('mode', mode);
-                params.append('provider', provider);
-                params.append('model', model);
-                params.append('h', history);
-                params.append('conversation_id', conversationMetadata.conversationId);
-                
-                const response = await fetch('/', {
-                    method: 'POST',
-                    headers: {
-                        'X-Requested-With': 'XMLHttpRequest',  // Tell server this is AJAX
-                        'Content-Type': 'application/x-www-form-urlencoded'
-                    },
-                    body: params.toString()
-                });
-                
-                if (!response.ok) throw new Error('Network response was not ok');
-                
-                // Stream the response
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let buffer = '';
-                let responseText = '';
-                
-                while (true) {
-                    const {done, value} = await reader.read();
-                    if (done) break;
-                    
-                    buffer += decoder.decode(value, {stream: true});
-                }
-                
-                // Just use the response directly - NO Q: A: parsing needed
-                responseText = buffer.trim();
-                answerDiv.innerHTML = responseText;
-                
-                // Add badge for this response
-                const responseId = 'resp_' + Date.now();
-                const modelName = model || 'llama-8b';
-                const providerInfo = detectProvider(modelName);
-                
-                const badgeHTML = '<div class="model-badge provider-' + providerInfo.name.toLowerCase() + '">' +
-                    '<button class="badge-toggle" onclick="toggleMetadata(\'' + responseId + '\')">' +
-                        '<span class="provider-dot">' + providerInfo.emoji + '</span>' +
-                        '<span class="model-name">' + modelName + '</span>' +
-                        '<span class="expand-icon">▼</span>' +
-                    '</button>' +
-                    '<div class="metadata-panel" id="metadata-' + responseId + '">' +
-                        '<table class="metadata-table">' +
-                            '<tr><td>Model:</td><td>' + modelName + '</td></tr>' +
-                            '<tr><td>Provider:</td><td>' + providerInfo.name + '</td></tr>' +
-                            '<tr><td>Time:</td><td>' + new Date().toLocaleTimeString() + '</td></tr>' +
-                        '</table>' +
-                    '</div>' +
-                '</div>';
-                
-                answerDiv.innerHTML = responseText + badgeHTML;
-                
-                // Save to localStorage
-                saveConversation();
-                
-                // Build history ARRAY for next request
-                const historyMessages = [];
-                const allQuestions = document.querySelectorAll('.q');
-                const allAnswers = document.querySelectorAll('.a');
-                
-                allQuestions.forEach((q, i) => {
-                    historyMessages.push({
-                        role: 'user',
-                        content: q.textContent
-                    });
-                    if (allAnswers[i]) {
-                        // Get answer text without badge
-                        const answerClone = allAnswers[i].cloneNode(true);
-                        const badge = answerClone.querySelector('.model-badge');
-                        if (badge) badge.remove();
-                        historyMessages.push({
-                            role: 'assistant',
-                            content: answerClone.textContent.trim()
-                        });
-                    }
-                });
-                
-                // Store history as JSON array
-                document.getElementById('history-input').value = JSON.stringify(historyMessages);
-                
-            } catch (error) {
-                answerDiv.innerHTML = '<p style="color: red;">Error: ' + error.message + '</p>';
-            } finally {
-                // Re-enable form
-                queryInput.value = '';
-                queryInput.disabled = false;
-                queryInput.focus();
-                document.getElementById('send-button').disabled = false;
-            }
-        }
-        
-        // Helper function to detect provider from model name
-        function detectProvider(modelName) {
-            if (modelName.includes('gpt')) return {name: 'OpenAI', emoji: '🟢'};
-            if (modelName.includes('claude')) return {name: 'Anthropic', emoji: '🟠'};
-            if (modelName.includes('gemini')) return {name: 'Google', emoji: '🔵'};
-            if (modelName.includes('llama')) return {name: 'Meta', emoji: '🔷'};
-            if (modelName.includes('mistral')) return {name: 'Mistral', emoji: '🟣'};
-            return {name: 'Unknown', emoji: '⚫'};
-        }
-        
-        // Initialize session ID if not set
-        if (!document.getElementById('session-input').value) {
-            document.getElementById('session-input').value = conversationMetadata.sessionId;
-        }
-        
-        // Mode toggle handler
-        document.querySelectorAll('input[name="ui-mode"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                const mode = e.target.value;
-                conversationMetadata.currentMode = mode;
-                document.getElementById('mode-input').value = mode;
-                
-                if (mode === 'advanced') {
-                    document.getElementById('advanced-controls').classList.remove('hidden');
-                    document.getElementById('simplified-controls').classList.add('hidden');
-                } else {
-                    document.getElementById('advanced-controls').classList.add('hidden');
-                    document.getElementById('simplified-controls').classList.remove('hidden');
-                }
-            });
-        });
-        
-        // Provider dropdown toggle
-        function toggleProviderDropdown() {
-            const options = document.getElementById('provider-options');
-            options.classList.toggle('open');
-            
-            // Populate if empty
-            if (options.children.length === 0) {
-                populateProviders();
-            }
-        }
-        
-        // Close dropdown when clicking outside
-        document.addEventListener('click', (e) => {
-            if (!e.target.closest('.provider-select')) {
-                document.getElementById('provider-options').classList.remove('open');
-            }
-        });
-        
-        // Populate provider options
-        function populateProviders() {
-            const container = document.getElementById('provider-options');
-            container.innerHTML = '';
-            
-            Object.entries(providers).forEach(([key, provider]) => {
-                const option = document.createElement('div');
-                option.className = 'provider-option provider-' + key;
-                option.innerHTML = 
-                    '<span class="provider-dot">' + provider.emoji + '</span>' +
-                    '<span>' + provider.name + '</span>' +
-                    '<span style="margin-left: auto; color: #999; font-size: 0.8rem;">' + 
-                    provider.models.length + ' models</span>';
-                option.onclick = () => selectProvider(key);
-                container.appendChild(option);
-            });
-        }
-        
-        // Select provider
-        function selectProvider(providerId) {
-            const provider = providers[providerId];
-            if (!provider) return;
-            
-            // Update dropdown display
-            const dropdown = document.querySelector('.provider-dropdown');
-            dropdown.innerHTML = 
-                '<span class="provider-dot">' + provider.emoji + '</span>' +
-                '<span class="provider-name">' + provider.name + '</span>' +
-                '<span style="margin-left: auto;">▼</span>';
-            dropdown.className = 'provider-dropdown provider-' + providerId;
-            
-            // Update hidden input
-            document.getElementById('provider-input').value = providerId;
-            
-            // Update model dropdown
-            populateModels(provider.models);
-            
-            // Close dropdown
-            document.getElementById('provider-options').classList.remove('open');
-        }
-        
-        // Populate model dropdown
-        function populateModels(models) {
-            const select = document.getElementById('model-dropdown');
-            select.innerHTML = '';
-            
-            models.forEach(model => {
-                const option = document.createElement('option');
-                option.value = model;
-                option.textContent = model;
-                select.appendChild(option);
-            });
-            
-            // Update hidden input
-            if (models.length > 0) {
-                document.getElementById('model-input').value = models[0];
-            }
-        }
-        
-        // Update model input when dropdown changes
-        document.getElementById('model-dropdown').addEventListener('change', (e) => {
-            document.getElementById('model-input').value = e.target.value;
-        });
-        
-        // Model badge toggle
-        function toggleMetadata(responseId) {
-            const panel = document.getElementById('metadata-' + responseId);
-            const badge = document.querySelector('[data-response-id="' + responseId + '"] .badge-toggle');
-            
-            if (panel) {
-                panel.classList.toggle('open');
-                badge.classList.toggle('expanded');
-            }
-        }
-        
-        // Add response metadata
-        function addResponseMetadata(metadata) {
-            if (metadata && metadata.response_id) {
-                conversationMetadata.responses[metadata.response_id] = metadata;
-            }
-        }
-        
-        // Generate session ID
-        function generateSessionId() {
-            return 'sess_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-        }
-    </script>
+    </div>
+    </div>
 </body>
 </html>`
 
@@ -825,6 +616,9 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		StartTime:   time.Now(),
 	}
 	
+	// Note: Removed auto-redirect to anchor as it was breaking page loads
+	// Browsers will still respect the anchor if manually navigated to /#footer-top
+	
 	// Beacon request start
 	beacon("request_start", map[string]interface{}{
 		"request_id": telemetry.RequestID,
@@ -843,7 +637,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var query, history, prompt, tier string
+	var query, history, prompt, tier, sessionID, seqStr string
 	content := ""
 	jsonResponse := ""
 
@@ -855,6 +649,8 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		query = r.FormValue("q")
 		history = r.FormValue("h")
 		tier = r.FormValue("tier")
+		sessionID = r.FormValue("session")
+		seqStr = r.FormValue("seq")
 		
 		// Default to balanced tier if not specified
 		if tier == "" {
@@ -885,91 +681,194 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	accept := r.Header.Get("Accept")
 	userAgent := strings.ToLower(r.Header.Get("User-Agent"))
 	wantsJSON := strings.Contains(accept, "application/json")
-	isAJAX := r.Header.Get("X-Requested-With") == "XMLHttpRequest"
-	wantsHTML := (isBrowserUA(userAgent) || strings.Contains(accept, "text/html")) && !isAJAX
+	wantsHTML := isBrowserUA(userAgent) || strings.Contains(accept, "text/html")
 	wantsStream := strings.Contains(accept, "text/event-stream")
 
 	if query != "" {
-		prompt = query
-		// Don't send history as part of the prompt - just the query!
-		// History is for display only, not for the LLM
-
-		// Handle AJAX requests
-		if isAJAX {
-			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-			
-			// Get the model from the request
-			modelToUse := r.FormValue("model")
-			if modelToUse == "" {
-				modelToUse = "llama-8b"
-			}
-			
-			// Get conversation ID from request
-			conversationID := r.FormValue("conversation_id")
-			if conversationID == "" {
-				// Generate new conversation ID if not provided
-				conversationID = fmt.Sprintf("conv_%d_%s", time.Now().Unix(), generateSignature(prompt)[:8])
-			}
-			
-			// Parse JSON message history
-			var messages []Message
-			if history != "" {
-				// Parse the JSON array of messages
-				var historyMessages []map[string]string
-				if err := json.Unmarshal([]byte(history), &historyMessages); err == nil {
-					for _, msg := range historyMessages {
-						messages = append(messages, Message{
-							Role: msg["role"],
-							Content: msg["content"],
-						})
-					}
-				}
-			}
-			// Add current query
-			messages = append(messages, Message{Role: "user", Content: prompt})
-			
-			// Build conversation prompt with full history
-			contextPrompt := ""
-			for _, msg := range messages {
-				if msg.Role == "user" {
-					contextPrompt += "User: " + msg.Content + "\n"
-				} else {
-					contextPrompt += "Assistant: " + msg.Content + "\n"
-				}
-			}
-			
-			// Convert Message array to map format for LLMWithRouter
-			var messagesMap []map[string]string
-			for _, msg := range messages {
-				messagesMap = append(messagesMap, map[string]string{
-					"role": msg.Role,
-					"content": msg.Content,
-				})
-			}
-			
-			// Call LLM with message array and conversation ID
-			var llmResp *LLMResponse
-			var err error
-			if modelRouter != nil {
-				// LLMWithRouterConv accepts conversation ID!
-				llmResp, err = LLMWithRouterConv(messagesMap, modelToUse, conversationID, nil, nil)
-			} else {
-				// NO FALLBACK! Router must be initialized!
-				err = fmt.Errorf("model router not initialized - cannot process request")
-			}
-			
-			if err != nil {
-				http.Error(w, err.Error(), http.StatusInternalServerError)
-				return
-			}
-			
-			// Return just the response content
-			fmt.Fprint(w, llmResp.Content)
+		// BILLING PROTECTION: Rate limit per IP to prevent $450 disasters
+		ipRequestMu.Lock()
+		// Reset counts every hour
+		if time.Since(lastResetTime) > time.Hour {
+			ipRequestCounts = make(map[string]int)
+			lastResetTime = time.Now()
+		}
+		
+		ipAddr := r.RemoteAddr
+		if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+			ipAddr = forwarded
+		}
+		
+		requestCount := ipRequestCounts[ipAddr]
+		if requestCount >= 50 { // Max 50 LLM calls per hour per IP
+			ipRequestMu.Unlock()
+			// Rate limit exceeded
+			http.Error(w, "Rate limit exceeded - too many requests. Please wait before trying again.", http.StatusTooManyRequests)
 			return
 		}
+		ipRequestCounts[ipAddr]++
+		ipRequestMu.Unlock()
+		
+		// Check for duplicate submission using session/sequence
+		isDuplicate := false
+		// Session check
+		if sessionID != "" && seqStr != "" {
+			if seq, err := strconv.Atoi(seqStr); err == nil {
+				sessionMu.RLock()
+				lastSeq, exists := sessionSeqs[sessionID]
+				sessionMu.RUnlock()
+				
+				if exists && seq <= lastSeq {
+					// This is a duplicate submission (refresh/back button)
+					isDuplicate = true
+					// Duplicate detected
+					beacon("duplicate_submission_blocked", map[string]interface{}{
+						"session_id": sessionID,
+						"seq": seq,
+						"last_seq": lastSeq,
+					})
+				} else if !exists {
+					// CRITICAL: Store the sequence IMMEDIATELY to prevent race conditions
+					// This prevents multiple refreshes from all making LLM calls
+					sessionMu.Lock()
+					sessionSeqs[sessionID] = seq
+					sessionMu.Unlock()
+					// Preemptively stored
+				}
+			}
+		}
+		
+		// Build message array from history for full conversation context
+		var messages []map[string]string
+		
+		// Parse the Q:/A: history into messages
+		if history != "" {
+			histParts := strings.Split("\n"+history, "\nQ: ")
+			for _, part := range histParts[1:] {
+				if i := strings.Index(part, "\nA: "); i >= 0 {
+					question := part[:i]
+					answer := part[i+4:]
+					
+					// Strip model metadata marker if present
+					if modelIdx := strings.Index(answer, "§MODEL:"); modelIdx >= 0 {
+						answer = answer[:modelIdx]
+					}
+					answer = strings.TrimSpace(answer)
+					
+					// Add to messages array
+					messages = append(messages, map[string]string{
+						"role": "user",
+						"content": question,
+					})
+					messages = append(messages, map[string]string{
+						"role": "assistant",
+						"content": answer,
+					})
+				}
+			}
+		}
+		
+		// Add current query to messages
+		messages = append(messages, map[string]string{
+			"role": "user",
+			"content": query,
+		})
+		
+		// Keep prompt for non-message uses (backward compatibility)
+		prompt = query
 
 		if wantsHTML && r.Header.Get("Accept") != "application/json" {
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
+			
+			// If duplicate, just show existing history without calling LLM
+			if isDuplicate {
+				// Just render the existing history
+				w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'")
+				fmt.Fprint(w, htmlHeader)
+				
+				// Render existing history
+				if history != "" {
+					histParts := strings.Split("\n"+history, "\nQ: ")
+					for _, part := range histParts[1:] {
+						if i := strings.Index(part, "\nA: "); i >= 0 {
+							question := part[:i]
+							answer := part[i+4:]
+							
+							// Extract model metadata if present
+							modelName := "llama-8b"
+							if modelIdx := strings.Index(answer, "§MODEL:"); modelIdx >= 0 {
+								modelStart := modelIdx + len("§MODEL:")
+								if endIdx := strings.Index(answer[modelStart:], "§"); endIdx >= 0 {
+									modelName = answer[modelStart : modelStart+endIdx]
+									answer = answer[:modelIdx]
+								}
+							}
+							answer = strings.TrimSpace(answer)
+							
+							fmt.Fprintf(w, "<div class=\"q\">%s</div>\n", html.EscapeString(question))
+							fmt.Fprintf(w, "<div class=\"a\">%s", answer)
+							
+							// Generate badge
+							providerEmoji := "⚫"
+							providerName := "Unknown"
+							
+							if strings.Contains(modelName, "gpt") {
+								providerEmoji = "🟢"
+								providerName = "OpenAI"
+							} else if strings.Contains(modelName, "claude") {
+								providerEmoji = "🟠"
+								providerName = "Anthropic"
+							} else if strings.Contains(modelName, "gemini") {
+								providerEmoji = "🔵"
+								providerName = "Google"
+							} else if strings.Contains(modelName, "llama") {
+								providerEmoji = "🔷"
+								providerName = "Meta"
+							} else if strings.Contains(modelName, "mistral") || strings.Contains(modelName, "mixtral") {
+								providerEmoji = "🟣"
+								providerName = "Mistral"
+							}
+							
+							fmt.Fprintf(w, `<div class="model-badge provider-%s">
+								<div class="badge-toggle">
+									<span class="provider-dot">%s</span>
+									<span class="model-name">%s</span>
+								</div>
+							</div>`,
+								strings.ToLower(providerName),
+								providerEmoji,
+								modelName,
+							)
+							fmt.Fprintf(w, "</div>\n")
+						}
+					}
+				}
+				
+				// Generate session/seq for the form
+				if sessionID == "" {
+					sessionID = fmt.Sprintf("sess_%d_%s", time.Now().Unix(), generateRequestID()[:8])
+				}
+				nextSeq := 1
+				if seqStr != "" {
+					if seq, err := strconv.Atoi(seqStr); err == nil {
+						nextSeq = seq // Keep same seq since it was duplicate
+					}
+				}
+				
+				// Build model table and footer
+				modelTable := buildModelTable(r.FormValue("model"))
+				safeHistory := strings.ReplaceAll(history, "</textarea>", "&lt;/textarea&gt;")
+				
+				fmt.Fprintf(w, htmlFooterTemplate,
+					safeHistory,
+					sessionID,
+					nextSeq,
+					modelTable,
+				)
+				
+				return
+			}
+			
+			// Not duplicate, continue with normal processing
 			w.Header().Set("Transfer-Encoding", "chunked")
 			w.Header().Set("X-Accel-Buffering", "no")
 			w.Header().Set("Cache-Control", "no-cache")
@@ -983,7 +882,29 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 
 			const minThreshold = 6144
 
-			fmt.Fprint(w, htmlHeader)
+			// Calculate total height for auto-scroll positioning
+			messageHeight := 0
+			if history != "" {
+				histParts := strings.Split("\n"+history, "\nQ: ")
+				messageHeight = (len(histParts) - 1) * 290 // Approximate per Q/A pair
+			}
+			messageHeight += 80 // For the new question we're about to add
+			
+			// If we have enough content, add spacer to start scrolled
+			if messageHeight > 600 {
+				scrollOffset := messageHeight - 350 // Leave 350px for incoming answer
+				headerWithScroll := strings.Replace(htmlHeader, "</style>", fmt.Sprintf(`
+					.chat::before {
+						content: '';
+						display: block;
+						height: %dpx;
+						margin-bottom: -%dpx;
+					}
+				</style>`, scrollOffset, scrollOffset), 1)
+				fmt.Fprint(w, headerWithScroll)
+			} else {
+				fmt.Fprint(w, htmlHeader)
+			}
 			
 			if currentSize < minThreshold {
 				paddingNeeded := (minThreshold - currentSize) / 3
@@ -999,10 +920,57 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 					if i := strings.Index(part, "\nA: "); i >= 0 {
 						question := part[:i]
 						answer := part[i+4:]
-						answer = strings.TrimRight(answer, "\n")
+						
+						// Extract model metadata if present (same as initial page load)
+						modelName := "llama-8b" // default
+						if modelIdx := strings.Index(answer, "§MODEL:"); modelIdx >= 0 {
+							modelStart := modelIdx + len("§MODEL:")
+							if endIdx := strings.Index(answer[modelStart:], "§"); endIdx >= 0 {
+								modelName = answer[modelStart : modelStart+endIdx]
+								// Remove the metadata from the answer
+								answer = answer[:modelIdx]
+							}
+						}
+						answer = strings.TrimSpace(answer)
+						
 						fmt.Fprintf(w, "<div class=\"q\">%s</div>\n", html.EscapeString(question))
 						// History answers contain HTML, render them as-is
-						fmt.Fprintf(w, "<div class=\"a\">%s</div>\n", answer)
+						fmt.Fprintf(w, "<div class=\"a\">%s", answer)
+						
+						// Generate badge for historical response
+						providerEmoji := "⚫"
+						providerName := "Unknown"
+						
+						if strings.Contains(modelName, "gpt") {
+							providerEmoji = "🟢"
+							providerName = "OpenAI"
+						} else if strings.Contains(modelName, "claude") {
+							providerEmoji = "🟠"
+							providerName = "Anthropic"
+						} else if strings.Contains(modelName, "gemini") {
+							providerEmoji = "🔵"
+							providerName = "Google"
+						} else if strings.Contains(modelName, "llama") {
+							providerEmoji = "🔷"
+							providerName = "Meta"
+						} else if strings.Contains(modelName, "mistral") || strings.Contains(modelName, "mixtral") {
+							providerEmoji = "🟣"
+							providerName = "Mistral"
+						}
+						
+						// Add the badge (no JavaScript onclick)
+						fmt.Fprintf(w, `<div class="model-badge provider-%s">
+							<div class="badge-toggle">
+								<span class="provider-dot">%s</span>
+								<span class="model-name">%s</span>
+							</div>
+						</div>`,
+							strings.ToLower(providerName),
+							providerEmoji,
+							modelName,
+						)
+						
+						fmt.Fprintf(w, "</div>\n")
 					}
 				}
 			}
@@ -1012,34 +980,36 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			ch := make(chan string)
 			var llmResp *LLMResponse
 			go func() {
-				htmlPrompt := htmlPromptPrefix + prompt
 				var resp *LLMResponse
 				var err error
 				
-				// Determine which model to use based on UI mode
-				var modelToUse string
-				uiMode := r.FormValue("mode")
-				if uiMode == "advanced" {
-					// In advanced mode, use the selected model
-					modelToUse = r.FormValue("model")
+				// Use the selected model from the form, or default
+				modelToUse := r.FormValue("model")
+				if modelToUse == "" {
+					// Fallback to environment default or llama-8b
+					modelToUse = os.Getenv("BASIC_OPENAI_MODEL")
 					if modelToUse == "" {
-						modelToUse = "llama-8b" // Default if not specified
+						modelToUse = "llama-8b"
 					}
-				} else {
-					// In simplified mode, use tier-based selection
-					modelToUse = tierToModel(tier)
+				}
+				
+				// Build messages with HTML prompt prefix for assistant
+				// Need to add the HTML instruction to the first user message
+				if len(messages) > 0 {
+					messages[0]["content"] = htmlPromptPrefix + messages[0]["content"]
 				}
 				
 				// Use router if available
 				if modelRouter != nil {
-					resp, err = LLMWithRouter(htmlPrompt, modelToUse, nil, ch)
+					// Send full message array with conversation context!
+					resp, err = LLMWithRouter(messages, modelToUse, nil, ch)
 				} else {
 					err = fmt.Errorf("model router not initialized")
 				}
 				if err != nil {
 					// Log the error but don't try to send it
 					// The channel is managed by LLM/LLMWithRouter
-					log.Printf("LLM error: %v", err)
+					// LLM error
 				} else {
 					llmResp = resp
 				}
@@ -1067,8 +1037,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			}
 			
 			// ALWAYS add model badge - every response gets one!
-			// Generate response ID for metadata tracking
-			responseID := fmt.Sprintf("resp_%d_%s", time.Now().Unix(), generateRequestID()[:8])
 			
 			// Get model name from response or use what was requested
 			modelName := ""
@@ -1076,22 +1044,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				modelName = llmResp.Model
 			} else {
 				// Fallback to what was requested
-				uiMode := r.FormValue("mode")
-				if uiMode == "advanced" {
-					modelName = r.FormValue("model")
+				modelName = r.FormValue("model")
+				if modelName == "" {
+					modelName = os.Getenv("BASIC_OPENAI_MODEL")
 					if modelName == "" {
 						modelName = "llama-8b"
-					}
-				} else {
-					// Simplified mode - use tier to determine model
-					tier := r.FormValue("tier")
-					switch tier {
-					case "fast":
-						modelName = "llama-8b"
-					case "frontier":
-						modelName = "claude-opus"
-					default:
-						modelName = "llama-70b"
 					}
 				}
 			}
@@ -1117,78 +1074,16 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				providerName = "Mistral"
 			}
 				
-				// Add the badge HTML
+				// Add the badge HTML (no JavaScript onclick)
 				fmt.Fprintf(w, `<div class="model-badge provider-%s">
-					<button class="badge-toggle" onclick="toggleMetadata('%s')">
+					<div class="badge-toggle">
 						<span class="provider-dot">%s</span>
 						<span class="model-name">%s</span>
-						<span class="expand-icon">▼</span>
-					</button>
-					<div class="metadata-panel" id="metadata-%s">
-						<table class="metadata-table">
-							<tr><td>Model:</td><td>%s</td></tr>
-							<tr><td>Provider:</td><td>%s</td></tr>
-							<tr><td>Tokens:</td><td>In: %d | Out: %d</td></tr>
-							<tr><td>Total:</td><td>%d tokens</td></tr>
-							<tr><td>Time:</td><td>%s</td></tr>
-						</table>
 					</div>
 				</div>`,
 					strings.ToLower(providerName),
-					responseID,
 					providerEmoji,
 					modelName,
-					responseID,
-					modelName,
-					providerName,
-					func() int {
-						if llmResp != nil {
-							return llmResp.InputTokens
-						}
-						return 0
-					}(),
-					func() int {
-						if llmResp != nil {
-							return llmResp.OutputTokens
-						}
-						return 0
-					}(),
-					func() int {
-						if llmResp != nil {
-							return llmResp.InputTokens + llmResp.OutputTokens
-						}
-						return 0
-					}(),
-					time.Now().Format("15:04:05"),
-				)
-				
-				// Add JavaScript to store metadata
-				fmt.Fprintf(w, `<script>
-					addResponseMetadata({
-						response_id: '%s',
-						model_name: '%s',
-						provider: '%s',
-						input_tokens: %d,
-						output_tokens: %d,
-						timestamp: '%s'
-					});
-				</script>`,
-					responseID,
-					modelName,
-					strings.ToLower(providerName),
-					func() int {
-						if llmResp != nil {
-							return llmResp.InputTokens
-						}
-						return 0
-					}(),
-					func() int {
-						if llmResp != nil {
-							return llmResp.OutputTokens
-						}
-						return 0
-					}(),
-					time.Now().Format(time.RFC3339),
 				)
 			
 			fmt.Fprint(w, "</div>\n")
@@ -1209,17 +1104,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			// Use a delimiter that won't appear in normal text
 			finalHistory := history + fmt.Sprintf("Q: %s\nA: %s\n§MODEL:%s§\n\n", query, response, modelInfo)
 			
-			// Get mode from form or default to advanced
-			uiMode := r.FormValue("mode")
-			if uiMode == "" {
-				uiMode = "advanced"
-			}
-			
-			// Get session ID or generate new one
-			sessionID := r.FormValue("session_id")
-			if sessionID == "" {
-				sessionID = fmt.Sprintf("sess_%d_%s", time.Now().Unix(), generateRequestID()[:8])
-			}
+			// sessionID already extracted at the top of the function
 			
 			// Get provider and model selections
 			provider := r.FormValue("provider")
@@ -1231,24 +1116,13 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				model = "llama-8b" // Default model
 			}
 			
-			// Mode toggle states
-			advancedChecked := ""
-			simplifiedChecked := ""
-			advancedClass := ""
-			simplifiedClass := "hidden"
-			if uiMode == "simplified" {
-				simplifiedChecked = "checked"
-				advancedClass = "hidden"
-				simplifiedClass = ""
-			} else {
-				advancedChecked = "checked"
-			}
+			// No mode toggle needed for no-JS version
 			
 			// Build providers JSON and model options from actual registry
 			var modelOptions string
 			providerEmoji = "🔷"
 			providerName = "Meta"
-			var providersJSON string = "{}"
+			// var providersJSON string = "{}" // Not needed in no-JS version
 			
 			if modelRegistry != nil {
 				allModels := modelRegistry.List()
@@ -1310,9 +1184,10 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				}
 				
 				// Convert to JSON
-				if jsonBytes, err := json.Marshal(providersData); err == nil {
-					providersJSON = string(jsonBytes)
-				}
+				// Not needed in no-JS version
+				// if jsonBytes, err := json.Marshal(providersData); err == nil {
+				// 	providersJSON = string(jsonBytes)
+				// }
 				
 				// Build model options for current provider
 				var modelsForProvider []string
@@ -1353,42 +1228,104 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			} else {
 				// Fallback if registry not available
 				modelOptions = `<option value="llama-8b">llama-8b</option>`
-				providersJSON = `{"meta": {"name": "Meta", "color": "#0668E1", "emoji": "🔷", "models": ["llama-8b"], "enabled": true}}`
+				// providersJSON = `{"meta": {"name": "Meta", "color": "#0668E1", "emoji": "🔷", "models": ["llama-8b"], "enabled": true}}` // Not needed
 			}
 			
-			// Format the tier radio buttons
-			fastChecked := ""
-			balancedChecked := "checked"
-			frontierChecked := ""
-			if tier == "fast" {
-				fastChecked = "checked"
-				balancedChecked = ""
-			} else if tier == "frontier" {
-				frontierChecked = "checked"
-				balancedChecked = ""
-			}
+			// No tier selection for no-JS version
 			
 			// Escape only the minimal necessary for textarea safety
 			safeHistory := strings.ReplaceAll(finalHistory, "</textarea>", "&lt;/textarea&gt;")
 			
-			// Format footer with all parameters
+			// Build radio button table for models
+			modelTable := "<table class='model-radio-table'><tr><th>Provider</th><th>Models</th></tr>"
+			
+			// Determine which model was actually used (from response)
+			actualModel := ""
+			if llmResp != nil && llmResp.Model != "" {
+				actualModel = llmResp.Model
+			} else if model != "" {
+				actualModel = model
+			} else {
+				actualModel = "llama-8b"
+			}
+			
+			if modelRegistry != nil {
+				// Group models by provider
+				type providerGroup struct{
+					Emoji string
+					Name string
+					Models []string
+				}
+				providerGroups := map[string]*providerGroup{
+					"meta": {"🔷", "Meta", []string{}},
+					"openai": {"🟢", "OpenAI", []string{}},
+					"anthropic": {"🟠", "Anthropic", []string{}},
+					"google": {"🔵", "Google", []string{}},
+				}
+				
+				allModels := modelRegistry.List()
+				for _, m := range allModels {
+					switch m.Family {
+					case "gpt":
+						providerGroups["openai"].Models = append(providerGroups["openai"].Models, m.ID)
+					case "claude":
+						providerGroups["anthropic"].Models = append(providerGroups["anthropic"].Models, m.ID)
+					case "gemini":
+						providerGroups["google"].Models = append(providerGroups["google"].Models, m.ID)
+					case "llama":
+						providerGroups["meta"].Models = append(providerGroups["meta"].Models, m.ID)
+					}
+				}
+				
+				// Build table rows
+				for _, providerKey := range []string{"meta", "openai", "anthropic", "google"} {
+					group := providerGroups[providerKey]
+					if len(group.Models) > 0 {
+						modelTable += fmt.Sprintf("<tr><td>%s %s</td><td>", group.Emoji, group.Name)
+						for _, modelID := range group.Models {
+							checked := ""
+							if modelID == actualModel {
+								checked = "checked"
+							}
+							modelTable += fmt.Sprintf(`<label><input type="radio" name="model" value="%s" %s> %s</label> `,
+								modelID, checked, modelID)
+						}
+						modelTable += "</td></tr>"
+					}
+				}
+			} else {
+				// Fallback if registry not available
+				checked := ""
+				if actualModel == "llama-8b" {
+					checked = "checked"
+				}
+				modelTable += fmt.Sprintf(`<tr><td>🔷 Meta</td><td><label><input type="radio" name="model" value="llama-8b" %s> llama-8b</label></td></tr>`, checked)
+			}
+			modelTable += "</table>"
+			
+			
+			// Update session sequence after successful processing
+			if sessionID == "" {
+				sessionID = fmt.Sprintf("sess_%d_%s", time.Now().Unix(), generateRequestID()[:8])
+			}
+			nextSeq := 1
+			if seqStr != "" {
+				if seq, err := strconv.Atoi(seqStr); err == nil {
+					nextSeq = seq + 1
+					// Store the new sequence number
+					sessionMu.Lock()
+					sessionSeqs[sessionID] = seq
+					sessionMu.Unlock()
+					// Stored sequence
+				}
+			}
+			
+			// Format footer with session tracking
 			fmt.Fprintf(w, htmlFooterTemplate,
-				advancedChecked,    // advanced mode radio
-				simplifiedChecked,  // simplified mode radio
-				advancedClass,      // advanced controls visibility
-				providerEmoji,      // provider emoji
-				providerName,       // provider name
-				modelOptions,       // model dropdown options
-				simplifiedClass,    // simplified controls visibility
-				fastChecked,        // fast tier
-				balancedChecked,    // balanced tier
-				frontierChecked,    // frontier tier
-				uiMode,            // current mode
-				provider,          // current provider
-				model,             // current model
-				sessionID,         // session ID
-				safeHistory,       // conversation history
-				providersJSON,      // providers JSON for JavaScript
+				safeHistory,  // conversation history
+				sessionID,    // session ID
+				nextSeq,      // next sequence number
+				modelTable,   // model radio button table
 			)
 			
 			// Calculate final telemetry
@@ -1443,7 +1380,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				if err != nil {
 					// Log the error but don't try to send it
 					// The channel is managed by LLM/LLMWithRouter
-					log.Printf("LLM error: %v", err)
+					// LLM error
 				} else {
 					llmResp = resp
 				}
@@ -1618,8 +1555,57 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	} else if wantsHTML && query == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'unsafe-inline'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'")
-		fmt.Fprint(w, htmlHeader)
+		
+		// EXACT pixel calculation - no estimates
 		parts := strings.Split("\n"+content, "\nQ: ")
+		
+		// Known constants:
+		// Container width: 700px
+		// Font: 16px, ~8px per char average (system-ui)
+		// Chars per line: 700px / 8px = ~87 chars
+		// Line height: 24px
+		// Q padding: 20px (1.25rem)
+		// A padding: 24px (1.5rem top/bottom)
+		// Badge: 32px total height
+		// Margins: 24px between messages
+		
+		const charsPerLine = 87
+		const lineHeight = 24
+		totalPixels := 0
+		
+		for _, part := range parts[1:] {
+			if i := strings.Index(part, "\nA: "); i >= 0 {
+				question := part[:i]
+				answer := part[i+4:]
+				
+				// Strip metadata for accurate char count
+				if modelIdx := strings.Index(answer, "§MODEL:"); modelIdx >= 0 {
+					answer = answer[:modelIdx]
+				}
+				
+				// Q: lines * lineHeight + padding
+				qLines := (len(question) + charsPerLine - 1) / charsPerLine
+				qHeight := qLines*lineHeight + 20 + 20 // top+bottom padding
+				
+				// A: lines * lineHeight + padding  
+				aLines := (len(answer) + charsPerLine - 1) / charsPerLine
+				aHeight := aLines*lineHeight + 24 + 24 // top+bottom padding
+				
+				// Total: Q + A + badge + margin
+				totalPixels += qHeight + aHeight + 32 + 24
+			}
+		}
+		
+		fmt.Fprint(w, htmlHeader)
+		
+		// Add spacer to scroll to bottom if needed
+		// Chat container starts ~200px from top (header+padding)
+		// Viewport is ~600px for chat area
+		if totalPixels > 600 {
+			spacerHeight := totalPixels - 400 // Leave some visible at top
+			fmt.Fprintf(w, `<div style="height:%dpx;margin-bottom:-%dpx;"></div>`, spacerHeight, spacerHeight)
+		}
+		
 		for _, part := range parts[1:] {
 			if i := strings.Index(part, "\nA: "); i >= 0 {
 				question := part[:i]
@@ -1643,7 +1629,6 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				fmt.Fprintf(w, "<div class=\"a\">%s", answer)
 				
 				// Generate badge for historical response
-				responseID := fmt.Sprintf("hist_%d_%d", time.Now().Unix(), len(parts))
 				
 				// Detect provider from model name
 				providerEmoji := "⚫"
@@ -1666,28 +1651,16 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 					providerName = "Mistral"
 				}
 				
-				// Add the badge
+				// Add the badge (no JavaScript onclick)
 				fmt.Fprintf(w, `<div class="model-badge provider-%s">
-					<button class="badge-toggle" onclick="toggleMetadata('%s')">
+					<div class="badge-toggle">
 						<span class="provider-dot">%s</span>
 						<span class="model-name">%s</span>
-						<span class="expand-icon">▼</span>
-					</button>
-					<div class="metadata-panel" id="metadata-%s">
-						<table class="metadata-table">
-							<tr><td>Model:</td><td>%s</td></tr>
-							<tr><td>Provider:</td><td>%s</td></tr>
-							<tr><td>Time:</td><td>Historical</td></tr>
-						</table>
 					</div>
 				</div>`,
 					strings.ToLower(providerName),
-					responseID,
 					providerEmoji,
 					modelName,
-					responseID,
-					modelName,
-					providerName,
 				)
 				
 				fmt.Fprintf(w, "</div>\n")
@@ -1699,106 +1672,84 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		safeContent := strings.ReplaceAll(content, "</textarea>", "&lt;/textarea&gt;")
 		
 		// Generate new session ID for new chat
-		sessionID := fmt.Sprintf("sess_%d_%s", time.Now().Unix(), generateRequestID()[:8])
+		// sessionID := fmt.Sprintf("sess_%d_%s", time.Now().Unix(), generateRequestID()[:8]) // Not needed in no-JS version
 		
-		// Build model options and providers JSON from registry
-		var modelOptions string
-		var providersJSON string = "{}"
+		// Build radio button table for initial page load
+		modelTable := "<table class='model-radio-table'><tr><th>Provider</th><th>Models</th></tr>"
+		
+		// Get system's configured default model from environment (loaded via godotenv)
+		defaultModel := os.Getenv("BASIC_OPENAI_MODEL")
+		if defaultModel == "" {
+			// If not set, try to use first available model
+			if modelRegistry != nil {
+				allModels := modelRegistry.List()
+				if len(allModels) > 0 {
+					defaultModel = allModels[0].ID
+				}
+			}
+		}
 		
 		if modelRegistry != nil {
+			// Group models by provider
+			type providerGroup struct{
+				Emoji string
+				Name string
+				Models []string
+			}
+			providerGroups := map[string]*providerGroup{
+				"meta": {"🔷", "Meta", []string{}},
+				"openai": {"🟢", "OpenAI", []string{}},
+				"anthropic": {"🟠", "Anthropic", []string{}},
+				"google": {"🔵", "Google", []string{}},
+			}
+			
 			allModels := modelRegistry.List()
 			
-			// Build providers data structure
-			type providerInfo struct {
-				Name    string   `json:"name"`
-				Color   string   `json:"color"`
-				Emoji   string   `json:"emoji"`
-				Models  []string `json:"models"`
-				Enabled bool     `json:"enabled"`
-			}
-			
-			// Use pointers to allow mutation
-			providersData := map[string]*providerInfo{
-				"openai": {
-					Name:    "OpenAI",
-					Color:   "#10A37F",
-					Emoji:   "🟢",
-					Models:  []string{},
-					Enabled: true,
-				},
-				"anthropic": {
-					Name:    "Anthropic",
-					Color:   "#D97757",
-					Emoji:   "🟠",
-					Models:  []string{},
-					Enabled: true,
-				},
-				"google": {
-					Name:    "Google",
-					Color:   "#4285F4",
-					Emoji:   "🔵",
-					Models:  []string{},
-					Enabled: true,
-				},
-				"meta": {
-					Name:    "Meta",
-					Color:   "#0668E1",
-					Emoji:   "🔷",
-					Models:  []string{},
-					Enabled: true,
-				},
-			}
-			
-			// Populate models for each provider
 			for _, m := range allModels {
 				switch m.Family {
 				case "gpt":
-					providersData["openai"].Models = append(providersData["openai"].Models, m.ID)
+					providerGroups["openai"].Models = append(providerGroups["openai"].Models, m.ID)
 				case "claude":
-					providersData["anthropic"].Models = append(providersData["anthropic"].Models, m.ID)
+					providerGroups["anthropic"].Models = append(providerGroups["anthropic"].Models, m.ID)
 				case "gemini":
-					providersData["google"].Models = append(providersData["google"].Models, m.ID)
+					providerGroups["google"].Models = append(providerGroups["google"].Models, m.ID)
 				case "llama":
-					providersData["meta"].Models = append(providersData["meta"].Models, m.ID)
-				// Note: mixtral family exists but has no valid deployments, so it won't show up
+					providerGroups["meta"].Models = append(providerGroups["meta"].Models, m.ID)
 				}
 			}
 			
-			// Convert to JSON
-			if jsonBytes, err := json.Marshal(providersData); err == nil {
-				providersJSON = string(jsonBytes)
+			// Build table rows with default selected (first available model)
+			for _, providerKey := range []string{"meta", "openai", "anthropic", "google"} {
+				group := providerGroups[providerKey]
+				if len(group.Models) > 0 {
+					modelTable += fmt.Sprintf("<tr><td>%s %s</td><td>", group.Emoji, group.Name)
+					for _, modelID := range group.Models {
+						checked := ""
+						if modelID == defaultModel {
+							checked = "checked"
+						}
+						modelTable += fmt.Sprintf(`<label><input type="radio" name="model" value="%s" %s> %s</label>`,
+							modelID, checked, modelID)
+					}
+					modelTable += "</td></tr>"
+				}
 			}
-			
-			// Build options HTML for Meta (default)
-			for _, modelID := range providersData["meta"].Models {
-				modelOptions += fmt.Sprintf(`<option value="%s">%s</option>`, modelID, modelID)
-			}
+		} else {
+			// Fallback if registry not available - no models
+			modelTable += `<tr><td colspan="2">No models available</td></tr>`
 		}
+		modelTable += "</table>"
 		
-		// Fallback if no models found
-		if modelOptions == "" {
-			modelOptions = `<option value="llama-8b">llama-8b</option>`
-			providersJSON = `{"meta": {"name": "Meta", "color": "#0668E1", "emoji": "🔷", "models": ["llama-8b"], "enabled": true}}`
-		}
 		
-		// Default to advanced mode with Meta provider
+		// Generate new session for initial page
+		newSessionID := fmt.Sprintf("sess_%d_%s", time.Now().Unix(), generateRequestID()[:8])
+		
+		// Format footer for initial page
 		fmt.Fprintf(w, htmlFooterTemplate,
-			"checked",   // advanced mode radio (default)
-			"",          // simplified mode radio
-			"",          // advanced controls visible
-			"🔷",        // Meta emoji
-			"Meta",      // Meta name
-			modelOptions, // Dynamic model options from registry
-			"hidden",    // simplified controls hidden
-			"",          // fast tier
-			"checked",   // balanced tier (default)
-			"",          // frontier tier
-			"advanced",  // current mode
-			"meta",      // current provider
-			"llama-8b",  // current model (default per user)
-			sessionID,   // session ID
-			safeContent, // history
-			providersJSON, // providers JSON for JavaScript
+			safeContent,  // history
+			newSessionID, // new session ID
+			1,            // starting sequence number
+			modelTable,   // model radio button table
 		)
 	} else {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -1867,7 +1818,7 @@ type Choice struct {
 }
 
 func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[handleChatCompletions] START - Method: %s", r.Method)
+	// Handle chat completions
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
@@ -1891,12 +1842,11 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 
 	var req ChatRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		log.Printf("[handleChatCompletions] Failed to decode JSON: %v", err)
+		// Failed to decode JSON
 		http.Error(w, "Invalid JSON", http.StatusBadRequest)
 		return
 	}
-	log.Printf("[handleChatCompletions] Request - Model: %s, MaxTokens: %d, Temperature: %f", 
-		req.Model, req.MaxTokens, req.Temperature)
+	// Process request
 
 	messages := make([]map[string]string, len(req.Messages))
 	var fullContent string
@@ -1912,7 +1862,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 	if discriminator != nil {
 		moduleResponse, err := discriminator.Process(fullContent, messages)
 		if err != nil {
-			log.Printf("[handleChatCompletions] Module processing error: %v", err)
+			// Module processing error
 			// Fall through to default processing
 		} else if moduleResponse != "" {
 			// Module handled the request
@@ -1958,7 +1908,7 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		PresencePenalty:  req.PresencePenalty,
 	}
 	
-	log.Printf("[handleChatCompletions] Using router for model: %s", req.Model)
+	// Using router for model
 	llmFunc := func(input interface{}, stream chan<- string) (*LLMResponse, error) {
 		return LLMWithRouter(input, req.Model, routerParams, stream)
 	}

@@ -228,6 +228,38 @@ cp .env.example .env # fill your api key
 docker compose up -d
 ```
 
+## Available Models
+
+### Currently Working Models via OneAPI
+
+**Claude Models (Channel 10 - AWS Bedrock):**
+- `claude-3.5-haiku` - Fast tier (200K context, 8K output)
+- `claude-3.5-sonnet` - Balanced tier (200K context, 8K output)
+- `claude-3.7-sonnet` - Latest balanced tier (200K context, 131K output)
+- `claude-4-sonnet` - Frontier tier (200K context, 65K output)
+- `claude-4-opus` - Frontier tier (200K context, 65K output)
+- `claude-4.1-opus` - Highest frontier tier (200K context, 65K output)
+
+**Gemini Models (Channel 3 - Google):**
+- `gemini-1.5-flash` - Fast tier (1M input, 8K output)
+- `gemini-2.5-flash` - Balanced tier (1M input, 65K output)
+- `gemini-2.5-pro` - Frontier tier (1M input, 65K output - set max_tokens ≥1000 for proper responses)
+
+**GPT Models (Various Channels):**
+- `gpt-4.1-nano` - Economy tier (Channel 11 - Azure)
+- `gpt-mini` (gpt-4.1-mini) - Balanced tier
+- `gpt-41` (gpt-4.1) - Advanced tier
+- `gpt-5-nano` - Fast GPT-5 tier
+- `gpt-5-mini` - Balanced GPT-5 tier
+- `gpt-5` - Full GPT-5
+
+**Llama Models (Channels 4/10 - Azure/Bedrock):**
+- `llama-8b` - Small, fast (default model)
+- `llama-70b` - Large, capable
+- `llama-405b` - Largest Llama model
+- `llama-scout` - Llama 4 Scout variant
+- `llama-maverick` - Llama 4 Maverick variant
+
 ## Configuration
 
 ### Environment Variables (.env)

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -120,8 +119,7 @@ func (b *BaselineOpenAICompatibilityProvider) Execute(ctx context.Context, req *
 
 // TranslateResponse converts API response to unified format
 func (b *BaselineOpenAICompatibilityProvider) TranslateResponse(ctx context.Context, resp *ProviderResponse, deployment *models.Deployment) (*UnifiedResponse, error) {
-	// Debug log the raw response
-	log.Printf("[BaselineOpenAI] Raw response for %s: %s", deployment.ProviderModelID, string(resp.Body))
+	// Process response
 	
 	// Parse OpenAI-compatible response format
 	var unifiedResp UnifiedResponse
@@ -239,7 +237,7 @@ func (b *BaselineOpenAICompatibilityProvider) ValidateConfig(deployment *models.
 
 	// Validate auth if required (but allow empty for local models)
 	if deployment.Endpoint.Auth.Type == models.AuthAPIKey && deployment.Endpoint.Auth.APIKey == "" {
-		log.Printf("[BaselineOpenAI] Warning: API key is empty (OK for local models)")
+		// API key is empty (OK for local models)
 	}
 
 	return nil

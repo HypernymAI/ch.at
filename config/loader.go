@@ -38,6 +38,7 @@ type DeploymentConfig struct {
 	Priority        int                    `yaml:"priority"`
 	Weight          int                    `yaml:"weight"`
 	Endpoint        EndpointConfig         `yaml:"endpoint"`
+	Parameters      map[string]interface{} `yaml:"parameters"`
 	Tags            map[string]string      `yaml:"tags"`
 }
 
@@ -321,8 +322,9 @@ func BuildRouter(config *Config) (*routing.Router, *models.ModelRegistry, *model
 				Available: true,
 				Healthy:   true,
 			},
-			Tags:      deploymentConfig.Tags,
-			CreatedAt: time.Now(),
+			Parameters: deploymentConfig.Parameters,
+			Tags:       deploymentConfig.Tags,
+			CreatedAt:  time.Now(),
 		}
 		
 		deploymentRegistry.Register(deployment)
