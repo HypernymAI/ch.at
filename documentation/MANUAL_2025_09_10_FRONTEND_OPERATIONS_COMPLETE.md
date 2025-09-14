@@ -7,207 +7,169 @@
 4. [API Usage](#api-usage)
 5. [Model Selection and Routing](#model-selection-and-routing)
 6. [Channel Introspection](#channel-introspection)
-7. [Banner System](#banner-system)
-8. [Running the Frontend](#running-the-frontend)
-9. [Client Integration](#client-integration)
-10. [Testing and Debugging](#testing-and-debugging)
+7. [Running the Frontend](#running-the-frontend)
+8. [Client Integration](#client-integration)
+9. [Testing and Debugging](#testing-and-debugging)
 
 ## Overview
 
-The ch.at frontend provides multiple interfaces for users to interact with the LLM backend, all without requiring JavaScript (though enhanced features are available with JS enabled). The system emphasizes privacy, transparency, and accessibility.
+The ch.at frontend provides multiple interfaces for users to interact with the LLM backend, following a classic server-side rendering philosophy. The system is built without JavaScript dependencies, ensuring maximum compatibility, privacy, and accessibility while eliminating client-side tracking and vulnerabilities.
 
 ### Frontend Access Methods
 
-1. **Web Browser** - HTML interface at http://ch.at
+1. **Web Browser** - Pure HTML interface at http://ch.at
 2. **Command Line** - curl, wget, httpie
 3. **Terminal** - SSH access
 4. **DNS Client** - dig, nslookup
 5. **API Client** - Any OpenAI-compatible client
-6. **WebSocket** - Real-time streaming
 
-### Design Principles
+### Design Philosophy
 
-- **No JavaScript Required** - Core functionality works without JS
-- **Progressive Enhancement** - JS adds features but isn't required
-- **Privacy First** - No tracking, client-side storage only
-- **Accessibility** - Works with screen readers, keyboard navigation
-- **Transparency** - Live system status visible to users
+- **Classic Server-Side Rendering** - All logic executes on the server, no client-side scripting
+- **Zero Client Dependencies** - Works in any browser, including text-based browsers like lynx
+- **Privacy by Architecture** - No trackers, analytics, or client-side state management
+- **Universal Accessibility** - Functions perfectly with screen readers, keyboard navigation, and assistive technologies
+- **Transparency** - Live system status endpoints show exactly what the system is doing
 
 ## Web Interface
 
 ### HTML Structure (`http.go`)
 
-The web interface is served directly from Go with embedded HTML:
+The web interface is served directly from Go with embedded HTML, following classic web architecture principles:
 
 ```go
-const htmlContent = `<!DOCTYPE html>
+const htmlHeader = `<!DOCTYPE html>
 <html>
 <head>
-    <title>ch.at - Universal Basic Intelligence</title>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>ch.at</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* Minimal CSS for readability */
+        /* Pure CSS for styling - no JavaScript */
         body { 
-            max-width: 800px; 
-            margin: 0 auto; 
-            padding: 20px;
-            font-family: -apple-system, system-ui, sans-serif;
+            font-family: system-ui, -apple-system, sans-serif; 
+            background: #FFF8F0; 
+            color: #2C1F3D;
         }
-        .chat-container { 
-            border: 1px solid #ccc; 
+        .chat { 
+            max-width: 700px; 
+            margin: 1.25rem auto;
+        }
+        .q { 
+            padding: 1.25rem; 
+            background: #E8DCC4; 
+            font-style: italic; 
+            border-left: 4px solid #6B4C8A; 
+        }
+        .a { 
+            padding: 1.5rem 1.25rem; 
+            background: #FFFBF5; 
             border-radius: 8px;
-            padding: 20px;
+            position: relative;
         }
-        .response { 
-            white-space: pre-wrap;
-            background: #f5f5f5;
-            padding: 10px;
-            border-radius: 4px;
+        .model-badge {
+            position: absolute;
+            top: 0;
+            right: 0;
         }
     </style>
 </head>
 <body>
-    <h1>ch.at</h1>
-    <div class="chat-container">
-        <form method="GET" action="/">
-            <textarea name="q" placeholder="Ask anything..."></textarea>
-            <button type="submit">Send</button>
-        </form>
-        <div id="response"></div>
-    </div>
-</body>
-</html>`
+    <!-- Pure HTML, server-rendered -->
+`
 ```
 
-### No-JavaScript Mode
+### Server-Side Rendering
 
-Core functionality without JavaScript:
+All functionality is implemented through traditional HTTP form submissions and server responses:
 
 ```html
-<!-- Query via GET parameter -->
-<form method="GET" action="/">
-    <input name="q" value="What is Go?">
-    <button>Ask</button>
+<!-- Query submission via POST -->
+<form method="POST" action="/">
+    <input type="text" name="q" placeholder="Type your message..." autofocus>
+    <input type="submit" value="Send">
+    <textarea name="h" style="display:none"><!-- Server-maintained history --></textarea>
+    <input type="hidden" name="session" value="sess_123456">
+    <input type="hidden" name="seq" value="1">
 </form>
 
-<!-- Server returns complete page with response -->
-<div class="response">
-    Go is a statically typed, compiled programming language...
-</div>
+<!-- Model selection via radio buttons -->
+<input type="radio" name="model" value="llama-8b" checked> Llama 8B
+<input type="radio" name="model" value="claude-3.5-haiku"> Claude Haiku
+<input type="radio" name="model" value="gpt-4.1-nano"> GPT Nano
 ```
 
-### Progressive Enhancement
+### Response Streaming
 
-With JavaScript enabled, adds:
+The server uses HTTP chunked transfer encoding for real-time response streaming:
 
-```javascript
-// Model selection dropdown
-const modelSelect = document.createElement('select');
-modelSelect.id = 'model-select';
-modelSelect.innerHTML = `
-    <option value="">Auto-select</option>
-    <option value="llama-8b">Llama 8B (Fast)</option>
-    <option value="claude-3.5-haiku">Claude Haiku</option>
-    <option value="gpt-4.1-nano">GPT-4.1 Nano</option>
-`;
-
-// Real-time streaming
-const eventSource = new EventSource('/stream?q=' + query);
-eventSource.onmessage = (event) => {
-    responseDiv.innerHTML += event.data;
-};
-
-// Conversation history
-const history = JSON.parse(localStorage.getItem('chat_history') || '[]');
-history.push({
-    query: query,
-    response: response,
-    timestamp: Date.now()
-});
-localStorage.setItem('chat_history', JSON.stringify(history));
+```go
+func handleRoot(w http.ResponseWriter, r *http.Request) {
+    w.Header().Set("Transfer-Encoding", "chunked")
+    w.Header().Set("X-Accel-Buffering", "no")
+    flusher := w.(http.Flusher)
+    
+    // Stream the response as it's generated
+    ch := make(chan string)
+    go LLMWithRouter(messages, model, params, ch)
+    
+    for chunk := range ch {
+        fmt.Fprint(w, chunk)
+        flusher.Flush()
+    }
+}
 ```
 
 ## Session Management
 
-### Client-Side Sessions
+### Server-Side Session Tracking
 
-Sessions are managed entirely client-side for privacy:
+Sessions are managed server-side to prevent duplicate submissions and maintain conversation context:
 
-```javascript
-// Session data structure
-const session = {
-    id: generateUUID(),
-    started: Date.now(),
-    messages: [],
-    model: 'auto',
-    settings: {
-        temperature: 0.7,
-        maxTokens: 1000,
-        streamingEnabled: true
+```go
+var (
+    sessionSeqs = make(map[string]int)
+    sessionMu   sync.RWMutex
+)
+
+// Check for duplicate submission
+if sessionID != "" && seqStr != "" {
+    sessionMu.RLock()
+    lastSeq, exists := sessionSeqs[sessionID]
+    sessionMu.RUnlock()
+    
+    if exists && seq <= lastSeq {
+        // This is a duplicate (browser refresh/back button)
+        isDuplicate = true
     }
-};
-
-// Store in localStorage
-localStorage.setItem('current_session', JSON.stringify(session));
-
-// No server-side session storage
-// Each request is stateless
+}
 ```
 
-### Conversation Context
+### Conversation History
 
-For multi-turn conversations:
+History is passed through hidden form fields, maintaining state across requests without cookies:
 
-```javascript
-// Build context from history
-function buildContext() {
-    const session = JSON.parse(localStorage.getItem('current_session'));
-    const context = session.messages.slice(-10); // Last 10 messages
-    
-    return {
-        messages: context.map(msg => ({
-            role: msg.role,
-            content: msg.content
-        })),
-        model: session.model
-    };
-}
+```html
+<textarea name="h" style="display:none">
+Q: What is Go?
+A: Go is a statically typed, compiled programming language...
+§MODEL:llama-8b§
 
-// Send with context
-fetch('/v1/chat/completions', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-        ...buildContext(),
-        messages: [...context.messages, {role: 'user', content: newQuery}]
-    })
-});
+Q: Tell me more
+A: Go was designed at Google...
+§MODEL:gpt-4.1-nano§
+</textarea>
 ```
 
-### Session Persistence
+### Rate Limiting Protection
 
-```javascript
-// Export session
-function exportSession() {
-    const session = localStorage.getItem('current_session');
-    const blob = new Blob([session], {type: 'application/json'});
-    const url = URL.createObjectURL(blob);
-    
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `chat_session_${Date.now()}.json`;
-    a.click();
-}
+Server-side rate limiting prevents abuse and billing disasters:
 
-// Import session
-function importSession(file) {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-        localStorage.setItem('current_session', e.target.result);
-        location.reload();
-    };
-    reader.readAsText(file);
+```go
+// Per-IP rate limiting
+ipRequestCounts := make(map[string]int)
+if requestCount >= 50 { // Max 50 requests per hour per IP
+    http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
+    return
 }
 ```
 
@@ -241,312 +203,107 @@ curl -X POST http://ch.at/v1/chat/completions \
       "content": "Hello! How can I help you today?"
     },
     "finish_reason": "stop"
-  }],
-  "usage": {
-    "prompt_tokens": 10,
-    "completion_tokens": 12,
-    "total_tokens": 22
-  }
+  }]
 }
 ```
 
 ### Streaming API
 
-```javascript
-// Server-Sent Events streaming
-const response = await fetch('/v1/chat/completions', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({
-        model: 'llama-8b',
-        messages: [{role: 'user', content: 'Tell me a story'}],
-        stream: true
-    })
-});
+Server-Sent Events for real-time streaming:
 
-const reader = response.body.getReader();
-const decoder = new TextDecoder();
+```bash
+# Stream response
+curl -N -X POST http://ch.at/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama-8b","messages":[{"role":"user","content":"count to 10"}],"stream":true}'
 
-while (true) {
-    const {done, value} = await reader.read();
-    if (done) break;
-    
-    const chunk = decoder.decode(value);
-    const lines = chunk.split('\n');
-    
-    for (const line of lines) {
-        if (line.startsWith('data: ')) {
-            const data = JSON.parse(line.slice(6));
-            if (data.choices[0].delta.content) {
-                console.log(data.choices[0].delta.content);
-            }
-        }
-    }
-}
-```
-
-### WebSocket Interface
-
-```javascript
-// WebSocket for bidirectional streaming
-const ws = new WebSocket('ws://ch.at/ws');
-
-ws.onopen = () => {
-    ws.send(JSON.stringify({
-        type: 'chat',
-        model: 'llama-8b',
-        message: 'Hello'
-    }));
-};
-
-ws.onmessage = (event) => {
-    const data = JSON.parse(event.data);
-    if (data.type === 'chunk') {
-        document.getElementById('response').innerHTML += data.content;
-    } else if (data.type === 'complete') {
-        console.log('Response complete:', data.usage);
-    }
-};
-
-ws.onerror = (error) => {
-    console.error('WebSocket error:', error);
-};
+# Response format (SSE)
+data: {"choices":[{"delta":{"content":"One"}}]}
+data: {"choices":[{"delta":{"content":", two"}}]}
+data: [DONE]
 ```
 
 ## Model Selection and Routing
 
-### Model Discovery
+### Available Models Display
 
-```javascript
-// Get available models
-async function getAvailableModels() {
-    const response = await fetch('/routing_table', {
-        headers: {'Accept': 'application/json'}
-    });
-    const data = await response.json();
-    
-    return data.models.filter(m => m.healthy).map(m => ({
-        id: m.id,
-        name: m.name,
-        family: m.family,
-        tier: getTier(m.id)
-    }));
-}
+The interface shows available models organized by provider:
 
-function getTier(modelId) {
-    const tiers = {
-        fast: ['llama-8b', 'gpt-nano', 'claude-haiku'],
-        balanced: ['llama-70b', 'gpt-mini', 'claude-sonnet'],
-        frontier: ['llama-405b', 'gpt-5', 'claude-opus']
-    };
+```go
+func buildModelTable(selectedModel string) string {
+    modelTable := "<table class='model-radio-table'>"
     
-    for (const [tier, models] of Object.entries(tiers)) {
-        if (models.includes(modelId)) return tier;
+    // Group models by provider
+    for _, provider := range []string{"meta", "openai", "anthropic", "google"} {
+        models := getModelsForProvider(provider)
+        modelTable += fmt.Sprintf("<tr><td>%s %s</td><td>", 
+            getProviderEmoji(provider), provider)
+        
+        for _, model := range models {
+            checked := ""
+            if model == selectedModel {
+                checked = "checked"
+            }
+            modelTable += fmt.Sprintf(
+                `<label><input type="radio" name="model" value="%s" %s> %s</label>`,
+                model, checked, model)
+        }
+        modelTable += "</td></tr>"
     }
-    return 'standard';
+    return modelTable + "</table>"
 }
 ```
 
-### Dynamic Model Selection UI
+### Model Badges
 
-```javascript
-// Populate model dropdown
-async function populateModelSelect() {
-    const models = await getAvailableModels();
-    const select = document.getElementById('model-select');
-    
-    // Clear existing options
-    select.innerHTML = '<option value="">Auto-select</option>';
-    
-    // Group by tier
-    const tiers = {fast: [], balanced: [], frontier: []};
-    models.forEach(m => {
-        if (tiers[m.tier]) tiers[m.tier].push(m);
-    });
-    
-    // Add grouped options
-    for (const [tier, tierModels] of Object.entries(tiers)) {
-        if (tierModels.length === 0) continue;
-        
-        const optgroup = document.createElement('optgroup');
-        optgroup.label = tier.charAt(0).toUpperCase() + tier.slice(1);
-        
-        tierModels.forEach(model => {
-            const option = document.createElement('option');
-            option.value = model.id;
-            option.textContent = model.name;
-            optgroup.appendChild(option);
-        });
-        
-        select.appendChild(optgroup);
-    }
-}
-```
+Each response shows which model was used via server-rendered badges:
 
-### Tier-Based Selection
-
-```javascript
-// Request by tier instead of specific model
-async function chatWithTier(tier, message) {
-    return fetch('/v1/chat/completions', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({
-            model: `tier:${tier}`,  // e.g., "tier:fast"
-            messages: [{role: 'user', content: message}]
-        })
-    });
-}
-
-// Usage
-chatWithTier('fast', 'Quick question about JavaScript')
-    .then(response => response.json())
-    .then(data => console.log(data.choices[0].message.content));
+```html
+<div class="model-badge provider-anthropic">
+    <div class="badge-toggle">
+        <span class="provider-dot">🟠</span>
+        <span class="model-name">claude-3.5-haiku</span>
+    </div>
+</div>
 ```
 
 ## Channel Introspection
 
-### Viewing Active Channels
+### Routing Table Endpoint
 
-```javascript
-// Get channel information
-async function getChannelInfo() {
-    const response = await fetch('/routing_table', {
-        headers: {'Accept': 'application/json'}
-    });
-    const data = await response.json();
-    
-    // Extract channel mappings
-    const channels = {};
-    data.models.forEach(model => {
-        model.deployments.forEach(deployment => {
-            const channel = deployment.channel;
-            if (!channels[channel]) {
-                channels[channel] = {
-                    id: channel,
-                    provider: getProviderName(channel),
-                    models: []
-                };
-            }
-            channels[channel].models.push(model.id);
-        });
-    });
-    
-    return channels;
-}
+View the complete routing status without any client-side code:
 
-function getProviderName(channel) {
-    const mapping = {
-        '2': 'Anthropic',
-        '3': 'Google',
-        '4': 'Azure',
-        '8': 'OpenAI',
-        '10': 'AWS Bedrock',
-        '11': 'Azure OpenAI'
-    };
-    return mapping[channel] || 'Unknown';
-}
+```bash
+# HTML view
+curl http://localhost:8080/routing_table
+
+# JSON format for tools
+curl http://localhost:8080/routing_table -H "Accept: application/json"
 ```
 
-### Channel Status Display
+Response shows:
+- Available models and their health status
+- Active deployments and channels
+- Current routing configuration
+- Privacy settings (audit enabled/disabled)
 
-```html
-<!-- Channel status widget -->
-<div id="channel-status">
-    <h3>Provider Status</h3>
-    <div class="channels">
-        <div class="channel online">
-            <span class="indicator">●</span>
-            Anthropic (Channel 2): 3 models
-        </div>
-        <div class="channel offline">
-            <span class="indicator">●</span>
-            OpenAI (Channel 8): 0 models
-        </div>
-    </div>
-</div>
+### Health Status
 
-<style>
-.channel.online .indicator { color: green; }
-.channel.offline .indicator { color: red; }
-</style>
-```
+```bash
+curl http://localhost:8080/health
 
-## Banner System
-
-### System Messages
-
-The frontend can display important system messages:
-
-```javascript
-// Check for system banners
-async function checkSystemBanners() {
-    const response = await fetch('/system/banners');
-    const banners = await response.json();
-    
-    banners.forEach(banner => {
-        displayBanner(banner);
-    });
-}
-
-function displayBanner(banner) {
-    const div = document.createElement('div');
-    div.className = `banner banner-${banner.type}`;
-    div.innerHTML = `
-        <strong>${banner.title}</strong>
-        <p>${banner.message}</p>
-        ${banner.dismissible ? '<button onclick="this.parentElement.remove()">×</button>' : ''}
-    `;
-    
-    document.body.insertBefore(div, document.body.firstChild);
-}
-
-// Banner types
-const bannerTypes = {
-    info: {bg: '#e3f2fd', color: '#1976d2'},
-    warning: {bg: '#fff3e0', color: '#f57c00'},
-    error: {bg: '#ffebee', color: '#c62828'},
-    success: {bg: '#e8f5e9', color: '#388e3c'}
-};
-```
-
-### Terms of Service Banner
-
-```javascript
-// Check ToS acceptance
-function checkToSAcceptance() {
-    const acceptedVersion = localStorage.getItem('tos_accepted_version');
-    
-    fetch('/terms_of_service', {
-        headers: {'Accept': 'application/json'}
-    })
-    .then(response => response.json())
-    .then(tos => {
-        if (tos.version !== acceptedVersion) {
-            showToSBanner(tos);
-        }
-    });
-}
-
-function showToSBanner(tos) {
-    const banner = document.createElement('div');
-    banner.className = 'tos-banner';
-    banner.innerHTML = `
-        <h2>Terms of Service Updated</h2>
-        <p>Version ${tos.version} - Effective ${tos.effective_date}</p>
-        <p>${tos.agreement}</p>
-        <div class="actions">
-            <a href="/terms_of_service" target="_blank">Read Full Terms</a>
-            <button onclick="acceptToS('${tos.version}')">Accept</button>
-        </div>
-    `;
-    
-    document.body.insertBefore(banner, document.body.firstChild);
-}
-
-function acceptToS(version) {
-    localStorage.setItem('tos_accepted_version', version);
-    document.querySelector('.tos-banner').remove();
+{
+  "status": "healthy",
+  "services": {
+    "http": true,
+    "https": false,
+    "ssh": true,
+    "dns": true
+  },
+  "llm_configured": true,
+  "router_active": true,
+  "available_models": 18,
+  "healthy_deployments": 19
 }
 ```
 
@@ -598,182 +355,47 @@ EXPOSE 80 443 22 53
 CMD ["/ch.at"]
 ```
 
-```bash
-# Build and run
-docker build -t ch.at .
-docker run -p 80:80 -p 443:443 -p 22:22 -p 53:53/udp ch.at
-```
-
 ### Environment Configuration
 
 ```bash
-# .env file for frontend settings
+# .env file
 HIGH_PORT_MODE=false
-ENABLE_LLM_AUDIT=false
+ENABLE_LLM_AUDIT=false  # Privacy by default
 DEBUG_MODE=false
 
-# Model defaults for UI
-DEFAULT_MODEL="llama-8b"
-DEFAULT_TEMPERATURE="0.7"
-DEFAULT_MAX_TOKENS="1000"
+# Model routing
+ONE_API_URL=http://localhost:3000
+ONE_API_KEY=sk-your-key
 
-# UI feature flags
-ENABLE_MODEL_SELECTION=true
-ENABLE_CONVERSATION_HISTORY=true
-ENABLE_STREAMING=true
-ENABLE_WEBSOCKET=true
+# Baseline fallback
+BASIC_OPENAI_KEY=sk-your-key
+BASIC_OPENAI_URL=https://api.openai.com/v1/chat/completions
+BASIC_OPENAI_MODEL=gpt-4.1-nano
+
+# Service-specific models
+DNS_LLM_MODEL=llama-8b
+SSH_LLM_MODEL=claude-3.5-haiku
 ```
 
 ## Client Integration
 
-### DoNutSentry Client
+### Command Line Clients
 
-For DNS tunneling queries that exceed DNS limits:
-
-```javascript
-// DoNutSentry v2 Client
-const DoNutSentryClient = require('./donutsentry-client');
-
-const client = new DoNutSentryClient({
-    domain: 'qp.ch.at',
-    dnsServers: ['127.0.0.1:8053']
-});
-
-// Send large query via DNS
-const response = await client.query(veryLongQuery);
-console.log(response.response);
-
-// DNS-HTTP Bridge for browsers
-const bridge = new DNSHTTPBridge({
-    dnsServer: '127.0.0.1:8053',
-    httpPort: 8081
-});
-
-// Browser fetch via bridge
-async function queryViaDNS(query) {
-    const response = await fetch(`http://localhost:8081/dns/query`, {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({query, type: 'TXT'})
-    });
-    return response.json();
-}
-```
-
-**Running DoNutSentry Bridge:**
+#### Simple curl usage:
 ```bash
-# Start DNS-HTTP bridge
-node dns-http-bridge.js
+# Query with curl
+curl "http://ch.at/?q=What+is+rust"
 
-# Test with curl
-curl -X POST http://localhost:8081/dns/query \
-  -d '{"domain":"test.qp.ch.at","type":"TXT"}'
+# Path-based query
+curl "http://ch.at/what-is-rust"
+
+# API access
+curl -X POST http://ch.at/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama-8b","messages":[{"role":"user","content":"Hello"}]}'
 ```
 
-### Python Client
-
-```python
-import requests
-import json
-
-class ChatClient:
-    def __init__(self, base_url="http://ch.at"):
-        self.base_url = base_url
-        self.session = requests.Session()
-    
-    def chat(self, message, model="llama-8b", stream=False):
-        response = self.session.post(
-            f"{self.base_url}/v1/chat/completions",
-            json={
-                "model": model,
-                "messages": [{"role": "user", "content": message}],
-                "stream": stream
-            },
-            stream=stream
-        )
-        
-        if stream:
-            return self._handle_stream(response)
-        else:
-            return response.json()["choices"][0]["message"]["content"]
-    
-    def _handle_stream(self, response):
-        for line in response.iter_lines():
-            if line.startswith(b'data: '):
-                data = json.loads(line[6:])
-                if data.get("choices", [{}])[0].get("delta", {}).get("content"):
-                    yield data["choices"][0]["delta"]["content"]
-
-# Usage
-client = ChatClient()
-response = client.chat("What is Python?")
-print(response)
-```
-
-### JavaScript/Node.js Client
-
-```javascript
-class ChatClient {
-    constructor(baseUrl = 'http://ch.at') {
-        this.baseUrl = baseUrl;
-    }
-    
-    async chat(message, options = {}) {
-        const response = await fetch(`${this.baseUrl}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                model: options.model || 'llama-8b',
-                messages: [{role: 'user', content: message}],
-                temperature: options.temperature || 0.7,
-                max_tokens: options.maxTokens || 1000,
-                stream: options.stream || false
-            })
-        });
-        
-        if (options.stream) {
-            return this.handleStream(response);
-        } else {
-            const data = await response.json();
-            return data.choices[0].message.content;
-        }
-    }
-    
-    async *handleStream(response) {
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        
-        while (true) {
-            const {done, value} = await reader.read();
-            if (done) break;
-            
-            const chunk = decoder.decode(value);
-            const lines = chunk.split('\n');
-            
-            for (const line of lines) {
-                if (line.startsWith('data: ')) {
-                    try {
-                        const data = JSON.parse(line.slice(6));
-                        if (data.choices?.[0]?.delta?.content) {
-                            yield data.choices[0].delta.content;
-                        }
-                    } catch (e) {
-                        // Ignore parsing errors
-                    }
-                }
-            }
-        }
-    }
-}
-
-// Usage
-const client = new ChatClient();
-const response = await client.chat('What is JavaScript?');
-console.log(response);
-```
-
-### Command Line Client
-
+#### Shell script client:
 ```bash
 #!/bin/bash
 # ch.at CLI client
@@ -791,267 +413,156 @@ chat() {
         }" | jq -r '.choices[0].message.content'
 }
 
-# Interactive mode
-if [ $# -eq 0 ]; then
-    echo "ch.at CLI - Type 'exit' to quit"
-    while true; do
-        read -p "> " input
-        [ "$input" = "exit" ] && break
-        chat "$input"
-    done
-else
-    # Single query mode
-    chat "$*"
-fi
+# Usage
+chat "What is Go?"
+```
+
+### Python Client
+
+```python
+import requests
+import json
+
+class ChatClient:
+    def __init__(self, base_url="http://ch.at"):
+        self.base_url = base_url
+        self.session = requests.Session()
+    
+    def chat(self, message, model="llama-8b"):
+        response = self.session.post(
+            f"{self.base_url}/v1/chat/completions",
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": message}]
+            }
+        )
+        return response.json()["choices"][0]["message"]["content"]
+
+# Usage
+client = ChatClient()
+print(client.chat("What is Python?"))
+```
+
+### DoNutSentry Client
+
+For DNS tunneling when queries exceed DNS limits:
+
+```bash
+# Direct DNS query (simple)
+dig @ch.at "what-is-dns.q.ch.at" TXT
+
+# DoNutSentry v2 for large queries
+# Uses session-based protocol with paging
+# Domain: *.qp.ch.at
 ```
 
 ## Testing and Debugging
 
-### Frontend Testing
-
-```javascript
-// Test suite for frontend
-describe('Chat Frontend', () => {
-    test('should load without JavaScript', async () => {
-        const response = await fetch('http://localhost:8080');
-        const html = await response.text();
-        expect(html).toContain('<form');
-        expect(html).toContain('name="q"');
-    });
-    
-    test('should handle form submission', async () => {
-        const response = await fetch('http://localhost:8080?q=test');
-        const html = await response.text();
-        expect(response.status).toBe(200);
-        expect(html).toContain('response');
-    });
-    
-    test('should return valid API response', async () => {
-        const response = await fetch('http://localhost:8080/v1/chat/completions', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                model: 'llama-8b',
-                messages: [{role: 'user', content: 'test'}]
-            })
-        });
-        
-        const data = await response.json();
-        expect(data).toHaveProperty('choices');
-        expect(data.choices[0]).toHaveProperty('message');
-    });
-});
-```
-
-### Browser Console Debugging
-
-```javascript
-// Debug helpers for browser console
-window.chatDebug = {
-    // Check routing table
-    async checkRouting() {
-        const response = await fetch('/routing_table', {
-            headers: {'Accept': 'application/json'}
-        });
-        const data = await response.json();
-        console.table(data.models);
-        return data;
-    },
-    
-    // Test model availability
-    async testModel(modelId) {
-        const response = await fetch('/v1/chat/completions', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({
-                model: modelId,
-                messages: [{role: 'user', content: 'test'}],
-                max_tokens: 10
-            })
-        });
-        
-        if (response.ok) {
-            const data = await response.json();
-            console.log(`✅ ${modelId} working:`, data.choices[0].message.content);
-        } else {
-            console.error(`❌ ${modelId} failed:`, await response.text());
-        }
-    },
-    
-    // Clear all local storage
-    clearAll() {
-        localStorage.clear();
-        sessionStorage.clear();
-        console.log('All storage cleared');
-    },
-    
-    // Export conversation
-    exportChat() {
-        const history = localStorage.getItem('chat_history');
-        const blob = new Blob([history], {type: 'application/json'});
-        const url = URL.createObjectURL(blob);
-        window.open(url);
-    }
-};
-
-// Usage in console:
-// chatDebug.checkRouting()
-// chatDebug.testModel('llama-8b')
-```
-
-### Network Debugging
+### Functional Testing
 
 ```bash
-# Monitor WebSocket connections
-wscat -c ws://localhost:8080/ws
-
-# Test streaming endpoint
-curl -N -X POST http://localhost:8080/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{"model":"llama-8b","messages":[{"role":"user","content":"count to 10"}],"stream":true}'
-
-# Check response headers
+# Test web interface
 curl -I http://localhost:8080/
+# Should return 200 OK with HTML content-type
 
-# Test CORS headers (if enabled)
-curl -H "Origin: http://example.com" \
-  -H "Access-Control-Request-Method: POST" \
-  -H "Access-Control-Request-Headers: Content-Type" \
-  -X OPTIONS \
-  http://localhost:8080/v1/chat/completions -v
+# Test form submission
+curl -X POST http://localhost:8080/ \
+  -d "q=test&h=&model=llama-8b&session=test123&seq=1"
+
+# Test API endpoint
+curl -X POST http://localhost:8080/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"model":"llama-8b","messages":[{"role":"user","content":"test"}]}'
+
+# Test model routing
+curl http://localhost:8080/routing_table | grep "healthy"
 ```
 
-### Performance Monitoring
+### Performance Testing
 
-```javascript
-// Frontend performance metrics
-class PerformanceMonitor {
-    constructor() {
-        this.metrics = [];
-    }
-    
-    async measureRequest(fn, label) {
-        const start = performance.now();
-        try {
-            const result = await fn();
-            const duration = performance.now() - start;
-            
-            this.metrics.push({
-                label,
-                duration,
-                timestamp: Date.now(),
-                success: true
-            });
-            
-            console.log(`${label}: ${duration.toFixed(2)}ms`);
-            return result;
-        } catch (error) {
-            const duration = performance.now() - start;
-            
-            this.metrics.push({
-                label,
-                duration,
-                timestamp: Date.now(),
-                success: false,
-                error: error.message
-            });
-            
-            console.error(`${label} failed after ${duration.toFixed(2)}ms:`, error);
-            throw error;
-        }
-    }
-    
-    getStats() {
-        const successful = this.metrics.filter(m => m.success);
-        const failed = this.metrics.filter(m => !m.success);
-        
-        return {
-            total: this.metrics.length,
-            successful: successful.length,
-            failed: failed.length,
-            avgDuration: successful.reduce((a, b) => a + b.duration, 0) / successful.length,
-            p95: this.percentile(successful.map(m => m.duration), 0.95),
-            p99: this.percentile(successful.map(m => m.duration), 0.99)
-        };
-    }
-    
-    percentile(arr, p) {
-        const sorted = arr.sort((a, b) => a - b);
-        const index = Math.ceil(sorted.length * p) - 1;
-        return sorted[index];
-    }
-}
+```bash
+# Simple load test
+for i in {1..100}; do
+  curl -s "http://localhost:8080/?q=test" > /dev/null &
+done
 
-// Usage
-const monitor = new PerformanceMonitor();
+# Monitor with logs
+tail -f /tmp/ch.at.log | grep "Selected deployment"
 
-await monitor.measureRequest(
-    () => fetch('/v1/chat/completions', {method: 'POST', ...}),
-    'API Request'
-);
+# Check rate limiting
+for i in {1..60}; do
+  curl "http://localhost:8080/?q=test"
+  # Should get rate limited after 50 requests
+done
+```
 
-console.table(monitor.getStats());
+### Debug Modes
+
+```bash
+# Enable debug logging
+DEBUG_MODE=true ./ch.at
+
+# Router debugging
+ROUTER_DEBUG=true ./ch.at
+
+# Monitor health checks
+tail -f /tmp/ch.at.log | grep "Health check"
+```
+
+### Session Testing
+
+```bash
+# Test duplicate detection
+SESSION="sess_test"
+SEQ="1"
+
+# First request
+curl -X POST http://localhost:8080/ \
+  -d "q=test&session=$SESSION&seq=$SEQ"
+
+# Duplicate (should not trigger new LLM call)
+curl -X POST http://localhost:8080/ \
+  -d "q=test&session=$SESSION&seq=$SEQ"
 ```
 
 ## Accessibility
 
-### Keyboard Navigation
-
-```javascript
-// Enhanced keyboard support
-document.addEventListener('keydown', (e) => {
-    // Ctrl+Enter to submit
-    if (e.ctrlKey && e.key === 'Enter') {
-        const textarea = document.querySelector('textarea[name="q"]');
-        if (textarea && textarea.value) {
-            document.querySelector('form').submit();
-        }
-    }
-    
-    // Escape to clear input
-    if (e.key === 'Escape') {
-        const textarea = document.querySelector('textarea[name="q"]');
-        if (textarea) {
-            textarea.value = '';
-            textarea.focus();
-        }
-    }
-    
-    // Ctrl+L to clear conversation
-    if (e.ctrlKey && e.key === 'l') {
-        e.preventDefault();
-        document.getElementById('response').innerHTML = '';
-    }
-});
-```
+The server-side architecture ensures perfect accessibility:
 
 ### Screen Reader Support
 
+All content is semantic HTML with proper structure:
+
 ```html
-<!-- ARIA labels for accessibility -->
-<div role="main" aria-label="Chat Interface">
-    <form role="form" aria-label="Message Input">
-        <label for="message-input" class="sr-only">Enter your message</label>
-        <textarea 
-            id="message-input"
-            name="q" 
-            aria-label="Message input"
-            aria-required="true"
-            placeholder="Ask anything...">
-        </textarea>
-        <button type="submit" aria-label="Send message">Send</button>
-    </form>
-    
-    <div id="response" 
-         role="region" 
-         aria-label="Chat response"
-         aria-live="polite"
-         aria-atomic="false">
-        <!-- Response content -->
+<div class="chat">
+    <div class="q">User question here</div>
+    <div class="a">
+        Assistant response here
+        <div class="model-badge">
+            <span class="provider-dot">🔷</span>
+            <span class="model-name">llama-8b</span>
+        </div>
     </div>
 </div>
 ```
 
+### Keyboard Navigation
+
+Standard HTML form elements work with all keyboard navigation:
+- Tab through form fields
+- Enter to submit
+- No JavaScript traps or custom key handlers
+
+### Text-Based Browsers
+
+Fully functional in lynx, w3m, and other text browsers:
+
+```bash
+lynx http://ch.at
+w3m http://ch.at
+curl http://ch.at
+```
+
 ---
 
-*The ch.at frontend provides multiple access methods while maintaining privacy, accessibility, and transparency. Whether accessed through a browser, terminal, or API, users get consistent, reliable access to LLM capabilities.*
+*The ch.at frontend demonstrates that modern web applications can be powerful, fast, and universally accessible without relying on client-side scripting. This classic approach ensures privacy, security, and compatibility across all devices and browsers.*
