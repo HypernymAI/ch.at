@@ -6,11 +6,27 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 )
 
 const htmlPromptPrefix = "You are a helpful assistant. Use HTML formatting instead of markdown (no CSS or style attributes): "
+
+// isBrowserUA checks if the user agent appears to be from a web browser
+func isBrowserUA(ua string) bool {
+	ua = strings.ToLower(ua)
+	browserIndicators := []string{
+		"mozilla", "msie", "trident", "edge", "chrome", "safari", 
+		"firefox", "opera", "webkit", "gecko", "khtml",
+	}
+	for _, indicator := range browserIndicators {
+		if strings.Contains(ua, indicator) {
+			return true
+		}
+	}
+	return false
+}
 
 const htmlHeader = `<!DOCTYPE html>
 <html>
@@ -59,6 +75,7 @@ const htmlFooterTemplate = `</div>
 func StartHTTPServer(port int) error {
 	http.HandleFunc("/", handleRoot)
 	http.HandleFunc("/v1/chat/completions", handleChatCompletions)
+	http.HandleFunc("/health", handleHealth)
 
 	addr := fmt.Sprintf(":%d", port)
 	return http.ListenAndServe(addr, nil)
@@ -110,8 +127,9 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 	}
 
 	accept := r.Header.Get("Accept")
+	userAgent := strings.ToLower(r.Header.Get("User-Agent"))
 	wantsJSON := strings.Contains(accept, "application/json")
-	wantsHTML := strings.Contains(accept, "text/html")
+	wantsHTML := isBrowserUA(userAgent) || strings.Contains(accept, "text/html")
 	wantsStream := strings.Contains(accept, "text/event-stream")
 
 	if query != "" {
@@ -125,6 +143,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Transfer-Encoding", "chunked")
 			w.Header().Set("X-Accel-Buffering", "no")
 			w.Header().Set("Cache-Control", "no-cache")
+			w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'")
 			flusher := w.(http.Flusher)
 
 			headerSize := len(htmlHeader)
@@ -152,7 +171,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 						answer := part[i+4:]
 						answer = strings.TrimRight(answer, "\n")
 						fmt.Fprintf(w, "<div class=\"q\">%s</div>\n", html.EscapeString(question))
-						fmt.Fprintf(w, "<div class=\"a\">%s</div>\n", answer)
+						fmt.Fprintf(w, "<div class=\"a\">%s</div>\n", html.EscapeString(answer))
 					}
 				}
 			}
@@ -162,7 +181,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			ch := make(chan string)
 			go func() {
 				htmlPrompt := htmlPromptPrefix + prompt
-			if _, err := LLM(htmlPrompt, ch); err != nil {
+				if _, err := LLM(htmlPrompt, ch); err != nil {
 					ch <- err.Error()
 					close(ch)
 				}
@@ -170,10 +189,11 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 
 			response := ""
 			for chunk := range ch {
-				if _, err := fmt.Fprint(w, chunk); err != nil {
+				escapedChunk := html.EscapeString(chunk)
+				if _, err := fmt.Fprint(w, escapedChunk); err != nil {
 					return
 				}
-				response += chunk
+				response += escapedChunk
 				flusher.Flush()
 			}
 			fmt.Fprint(w, "</div>\n")
@@ -183,8 +203,8 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		userAgent := r.Header.Get("User-Agent")
-		isCurl := strings.Contains(userAgent, "curl") && !wantsHTML && !wantsJSON && !wantsStream
+		// More strict curl detection: only exact match or curl/ prefix
+		isCurl := (userAgent == "curl" || strings.HasPrefix(userAgent, "curl/")) && !wantsHTML && !wantsJSON && !wantsStream
 		if isCurl {
 			w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 			w.Header().Set("Transfer-Encoding", "chunked")
@@ -283,6 +303,7 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, jsonResponse)
 	} else if wantsHTML && query == "" {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; style-src 'unsafe-inline'")
 		fmt.Fprint(w, htmlHeader)
 		parts := strings.Split("\n"+content, "\nQ: ")
 		for _, part := range parts[1:] {
@@ -422,4 +443,50 @@ func handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(chatResp)
 	}
+}
+
+// handleHealth provides a health check endpoint
+func handleHealth(w http.ResponseWriter, r *http.Request) {
+	health := map[string]interface{}{
+		"status": "healthy",
+		"services": map[string]bool{
+			"http":  HTTP_PORT > 0,
+			"https": HTTPS_PORT > 0,
+			"ssh":   SSH_PORT > 0,
+			"dns":   DNS_PORT > 0,
+		},
+		"ports": map[string]int{
+			"http":  HTTP_PORT,
+			"https": HTTPS_PORT,
+			"ssh":   SSH_PORT,
+			"dns":   DNS_PORT,
+		},
+		"mode": "production",
+	}
+	
+	if os.Getenv("HIGH_PORT_MODE") == "true" {
+		health["mode"] = "development"
+	}
+	
+	// Check if LLM is configured
+	if apiKey != "" && apiURL != "" && modelName != "" {
+		health["llm_configured"] = true
+		health["llm_model"] = modelName
+	} else {
+		health["llm_configured"] = false
+	}
+	
+	// Check SSL certificates for HTTPS
+	if HTTPS_PORT > 0 {
+		_, _, found := findSSLCertificates()
+		health["ssl_certificates"] = found
+	}
+	
+	// Check DoNutSentry configuration
+	if donutSentryDomain != "" {
+		health["donutsentry_domain"] = donutSentryDomain
+	}
+	
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(health)
 }
