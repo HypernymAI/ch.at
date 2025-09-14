@@ -1,0 +1,120 @@
+routing:
+  # Primary routing strategy
+  # Options: round_robin, weighted, least_latency, least_cost, priority
+  strategy: "weighted"
+  
+  # Health checking configuration
+  health_check:
+    enabled: true
+    interval: 30s
+    timeout: 5s
+    max_consecutive_fails: 3
+    check_on_startup: true
+    
+  # Circuit breaker configuration
+  circuit_breaker:
+    enabled: true
+    error_threshold: 0.5        # Open circuit if error rate > 50%
+    success_threshold: 5         # Number of successes to close circuit
+    timeout: 60s                 # Time before trying half-open state
+    half_open_requests: 3        # Requests allowed in half-open state
+    
+  # Fallback behavior
+  fallback:
+    enabled: true
+    max_fallbacks: 3             # Maximum fallback attempts
+    prefer_same_region: true     # Try same region deployments first
+    prefer_gateway: true         # Prefer gateway over direct connections
+    
+  # Load balancing configuration
+  load_balancing:
+    algorithm: "weighted_round_robin"
+    sticky_sessions: false       # Stick to same deployment per user
+    session_duration: 5m         # Duration of sticky session
+    
+  # Rate limiting per deployment
+  rate_limiting:
+    enabled: true
+    default_rps: 100            # Default requests per second
+    burst: 200                  # Burst capacity
+    per_model_limits:
+      gpt-4: 50
+      gpt-4-turbo: 75
+      gpt-3.5-turbo: 200
+      claude-3-opus: 30
+      claude-3-sonnet: 60
+      claude-3-haiku: 150
+      llama-8b: 200
+      llama-70b: 50
+      mixtral-8x7b: 100
+      
+  # Metrics collection
+  metrics:
+    enabled: true
+    window_size: 5m             # Time window for metrics
+    percentiles: [50, 95, 99]   # Latency percentiles to track
+    export_interval: 10s        # How often to export metrics
+    
+  # Cost optimization
+  cost_optimization:
+    enabled: false              # Enable cost-based routing
+    max_cost_per_request: 0.1  # Maximum $ per request
+    prefer_cheaper: true        # Route to cheaper options when possible
+    
+  # Regional preferences
+  regional_preferences:
+    enabled: true
+    preferred_regions:
+      - "us-east"
+      - "us-central"
+      - "us-west"
+    latency_weights:           # Weight multiplier for regions
+      local: 1.0
+      same_continent: 1.2
+      cross_continent: 1.5
+      
+  # Model routing overrides
+  model_overrides:
+    # Force specific models to specific providers
+    # Example:
+    # gpt-4:
+    #   force_provider: "azure"
+    #   force_deployment: "gpt-4-oneapi-azure"
+    
+  # User routing preferences
+  user_preferences:
+    enabled: false
+    # Allow users to specify routing hints
+    allow_hints: true
+    # Honor user provider preferences
+    honor_provider_preference: true
+    
+  # Monitoring and alerting
+  monitoring:
+    enabled: true
+    alert_on_all_deployments_down: true
+    alert_on_high_latency: true
+    latency_threshold_ms: 5000
+    alert_on_high_error_rate: true
+    error_rate_threshold: 0.1
+    
+  # Deployment priorities
+  deployment_priorities:
+    # Override default priorities
+    # Lower number = higher priority
+    production:
+      oneapi_gateway: 1
+      direct_azure: 10
+      direct_bedrock: 11
+      direct_vertex: 12
+    development:
+      local: 1
+      oneapi_gateway: 2
+      direct_connections: 10
+      
+  # Experimental features
+  experimental:
+    smart_routing: false        # ML-based routing decisions
+    predictive_scaling: false   # Predict load and pre-warm
+    auto_discovery: false       # Auto-discover new models
+    shadow_testing: false       # Test new deployments with shadow traffic

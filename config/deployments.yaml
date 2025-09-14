@@ -1,0 +1,727 @@
+# Strategic Multi-Provider LLM Deployments
+# Horizontal Capacity: Multiple channels for rate limit distribution
+# Vertical Depth: Three tiers - Fast, Balanced, Frontier
+
+deployments:
+  # ============================================
+  # FAST TIER - Quick, cheap responses
+  # ============================================
+  
+  # Claude Haiku - Ultra fast Claude
+  # DISABLED - Using Bedrock only
+  # claude-3.5-haiku-oneapi-anthropic:
+  #   model_id: "claude-3.5-haiku"
+  #   provider: "oneapi"
+  #   provider_model_id: "claude-3-5-haiku-20241022"
+  #   priority: 1
+  #   weight: 40
+  #   endpoint:
+  #     base_url: "${ONE_API_URL:-http://localhost:3000}"
+  #     timeout: 15s
+  #     max_retries: 2
+  #     use_openai_format: true
+  #     auth:
+  #       type: "api_key"
+  #   tags:
+  #     tier: "fast"
+  #     channel: "2"
+  #     cost_tier: "low"
+
+  # GPT-4.1 Nano - Tiny OpenAI (Azure region)
+  gpt-4.1-nano-oneapi-azure:
+    model_id: "gpt-4.1-nano"
+    provider: "oneapi"
+    provider_model_id: "gpt-4.1-nano"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "fast"
+      channel: "11"
+      cost_tier: "low"
+
+  # Gemini 1.5 Flash - Google fast  
+  gemini-1.5-flash-oneapi-google:
+    model_id: "gemini-1.5-flash"
+    provider: "oneapi"
+    provider_model_id: "gemini-1.5-flash"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "fast"
+      channel: "3"
+      cost_tier: "low"
+
+  # Gemini 2.5 Flash - Google balanced
+  gemini-2.5-flash-oneapi-google:
+    model_id: "gemini-2.5-flash"
+    provider: "oneapi"
+    provider_model_id: "gemini-2.5-flash"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "3"
+      cost_tier: "medium"
+
+  # Llama 3 8B - Small open model (AWS)
+  llama-3-8b-oneapi-bedrock:
+    model_id: "llama-8b"
+    provider: "oneapi"
+    provider_model_id: "llama-3-8b"
+    priority: 2
+    weight: 20
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "fast"
+      channel: "10"
+      cost_tier: "low"
+
+  # Llama 3.1 8B - Newer small (Azure)
+  llama-3.1-8b-oneapi-azure:
+    model_id: "llama-8b"
+    provider: "oneapi"
+    provider_model_id: "Meta-Llama-31-8B-Instruct-2"
+    priority: 3
+    weight: 20
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "fast"
+      channel: "4"
+      cost_tier: "low"
+
+  # ============================================
+  # BALANCED TIER - Good performance/cost ratio
+  # ============================================
+  
+  # Claude 3.7 Sonnet - Latest balanced Claude
+  # DISABLED - Using Bedrock only
+  # claude-3.7-sonnet-oneapi-anthropic:
+  #   model_id: "claude-3.7-sonnet"
+  #   provider: "oneapi"
+  #   provider_model_id: "claude-3-7-sonnet-20250219"
+  #   priority: 1
+  #   weight: 35
+  #   endpoint:
+  #     base_url: "${ONE_API_URL:-http://localhost:3000}"
+  #     timeout: 30s
+  #     max_retries: 2
+  #     use_openai_format: true
+  #     auth:
+  #       type: "api_key"
+  #   tags:
+  #     tier: "balanced"
+  #     channel: "2"
+  #     cost_tier: "medium"
+
+  # Claude 3.5 Sonnet - Proven balanced (AWS)
+  claude-3.5-sonnet-oneapi-bedrock:
+    model_id: "claude-3.5-sonnet"
+    provider: "oneapi"
+    provider_model_id: "claude-3-5-sonnet-20240620"
+    priority: 2
+    weight: 25
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      channel: "10"
+      tier: "balanced"
+      cost_tier: "medium"
+
+  # Claude 3.5 Haiku - Fast (AWS Bedrock)
+  claude-3.5-haiku-oneapi-bedrock:
+    model_id: "claude-3.5-haiku"
+    provider: "oneapi"
+    provider_model_id: "claude-3-5-haiku-20241022"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "fast"
+      channel: "10"
+      cost_tier: "low"
+
+  # Claude 3.7 Sonnet - Latest balanced (AWS Bedrock)
+  claude-3.7-sonnet-oneapi-bedrock:
+    model_id: "claude-3.7-sonnet"
+    provider: "oneapi"
+    provider_model_id: "claude-3-7-sonnet-20250219"
+    priority: 1
+    weight: 35
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "10"
+      cost_tier: "medium"
+
+  # Claude Sonnet 4 - Advanced (AWS Bedrock)
+  claude-4-sonnet-oneapi-bedrock:
+    model_id: "claude-4-sonnet"
+    provider: "oneapi"
+    provider_model_id: "claude-sonnet-4-20250514"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 45s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "10"
+      cost_tier: "high"
+
+  # Claude Opus 4 - Latest frontier (AWS Bedrock)
+  claude-4-opus-oneapi-bedrock:
+    model_id: "claude-4-opus"
+    provider: "oneapi"
+    provider_model_id: "claude-opus-4-20250514"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 60s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "10"
+      cost_tier: "high"
+
+  # Claude Opus 4.1 - Latest frontier (AWS Bedrock)
+  claude-4.1-opus-oneapi-bedrock:
+    model_id: "claude-4.1-opus"
+    provider: "oneapi"
+    provider_model_id: "claude-opus-4-1-20250805"
+    priority: 1
+    weight: 35
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 60s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "10"
+      cost_tier: "high"
+
+  # GPT-4.1 Mini - Balanced (Azure)
+  gpt-4.1-mini-oneapi-azure-gpt:
+    model_id: "gpt-mini"
+    provider: "oneapi"
+    provider_model_id: "gpt-4.1-mini"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "8"
+      cost_tier: "medium"
+
+  # Llama 3 70B - Large open model (AWS)
+  llama-3-70b-oneapi-bedrock:
+    model_id: "llama-70b"
+    provider: "oneapi"
+    provider_model_id: "llama-3-70b"
+    priority: 1
+    weight: 25
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 45s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "10"
+      cost_tier: "medium"
+
+  # Llama 4 Scout - Efficient 16 experts
+  llama-4-scout-oneapi-bedrock:
+    model_id: "llama-scout"
+    provider: "oneapi"
+    provider_model_id: "llama-4-scout-17b"
+    priority: 2
+    weight: 20
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "10"
+      cost_tier: "medium"
+
+  # Llama 4 Scout - Azure backup
+  llama-4-scout-oneapi-azure:
+    model_id: "llama-scout"
+    provider: "oneapi"
+    provider_model_id: "Llama-4-Scout-17B-16E-Instruct"
+    priority: 3
+    weight: 15
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "balanced"
+      channel: "4"
+      cost_tier: "medium"
+
+
+  # ============================================
+  # FRONTIER TIER - Maximum capability
+  # ============================================
+  
+  # Claude Opus 4.1 - Latest frontier Claude  
+  # DISABLED - Using Bedrock only
+  # claude-4.1-opus-oneapi-anthropic:
+  #   model_id: "claude-4.1-opus"
+  #   provider: "oneapi"
+  #   provider_model_id: "claude-opus-4-1-20250805"
+  #   priority: 1
+  #   weight: 30
+  #   endpoint:
+  #     base_url: "${ONE_API_URL:-http://localhost:3000}"
+  #     timeout: 60s
+  #     max_retries: 2
+  #     use_openai_format: true
+  #     auth:
+  #       type: "api_key"
+  #   tags:
+  #     tier: "frontier"
+  #     channel: "2"
+  #     cost_tier: "high"
+
+  # Claude Opus 4 - Frontier Claude
+  # DISABLED - Using Bedrock only
+  # claude-4-opus-oneapi-anthropic:
+  #   model_id: "claude-4-opus"
+  #   provider: "oneapi"
+  #   provider_model_id: "claude-opus-4-20250514"
+  #   priority: 2
+  #   weight: 25
+  #   endpoint:
+  #     base_url: "${ONE_API_URL:-http://localhost:3000}"
+  #     timeout: 60s
+  #     max_retries: 2
+  #     use_openai_format: true
+  #     auth:
+  #       type: "api_key"
+  #   tags:
+  #     tier: "frontier"
+  #     channel: "2"
+  #     cost_tier: "high"
+
+  # GPT-5 Chat - Frontier (Azure)
+  gpt-5-chat-oneapi-azure-gpt:
+    model_id: "gpt-5"
+    provider: "oneapi"
+    provider_model_id: "gpt-5-chat"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 60s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "8"
+      cost_tier: "high"
+
+  # GPT-5 Nano - Tiny GPT-5 (Azure)
+  gpt-5-nano-oneapi-azure-gpt:
+    model_id: "gpt-5-nano"
+    provider: "oneapi"
+    provider_model_id: "gpt-5-nano"
+    priority: 1
+    weight: 25
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 15s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    parameters:
+      minimum_functional_tokens: 200
+    tags:
+      tier: "fast"
+      channel: "8"
+      cost_tier: "low"
+
+  # GPT-5 Mini - Balanced GPT-5 (Azure)
+  gpt-5-mini-oneapi-azure-gpt:
+    model_id: "gpt-5-mini"
+    provider: "oneapi"
+    provider_model_id: "gpt-5-mini"
+    priority: 1
+    weight: 30
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 30s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    parameters:
+      minimum_functional_tokens: 200
+    tags:
+      tier: "balanced"
+      channel: "8"
+      cost_tier: "medium"
+
+  # GPT-4.1 Full - Advanced (Azure)
+  gpt-4.1-full-oneapi-azure-gpt:
+    model_id: "gpt-41"
+    provider: "oneapi"
+    provider_model_id: "gpt-4.1"
+    priority: 2
+    weight: 25
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 60s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "8"
+      cost_tier: "high"
+
+  # Llama 405B - Massive open model
+  llama-3.1-405b-oneapi-azure:
+    model_id: "llama-405b"
+    provider: "oneapi"
+    provider_model_id: "Meta-Llama-31-405B-Instruct"
+    priority: 2
+    weight: 20
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 90s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "4"
+      cost_tier: "high"
+
+  # Llama 4 Maverick - Powerful 128 experts (AWS)
+  llama-4-maverick-oneapi-bedrock:
+    model_id: "llama-maverick"
+    provider: "oneapi"
+    provider_model_id: "llama-4-maverick-17b"
+    priority: 3
+    weight: 20
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 45s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "10"
+      cost_tier: "high"
+
+  # Llama 4 Maverick - Azure backup
+  llama-4-maverick-oneapi-azure:
+    model_id: "llama-maverick"
+    provider: "oneapi"
+    provider_model_id: "Llama-4-Maverick-17B-128E-Instruct-FP8"
+    priority: 4
+    weight: 15
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 45s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    tags:
+      tier: "frontier"
+      channel: "4"
+      cost_tier: "high"
+
+  # Gemini 2.5 Pro - Google frontier
+  gemini-2.5-pro-oneapi-google:
+    model_id: "gemini-2.5-pro"
+    provider: "oneapi"
+    provider_model_id: "gemini-2.5-pro"
+    priority: 2
+    weight: 25
+    endpoint:
+      base_url: "${ONE_API_URL:-http://localhost:3000}"
+      timeout: 60s
+      max_retries: 2
+      use_openai_format: true
+      auth:
+        type: "api_key"
+    parameters:
+      minimum_functional_tokens: 1000
+    tags:
+      tier: "frontier"
+      channel: "3"
+      cost_tier: "high"
+
+# ============================================
+# Model Registry
+# ============================================
+models:
+  # Fast Tier
+  claude-haiku:
+    name: "Claude 3.5 Haiku"
+    capabilities: ["chat", "completion"]
+    max_tokens: 200000
+    cost:
+      input: 0.00025
+      output: 0.00125
+
+  gpt-4.1-nano:
+    name: "GPT-4.1 Nano"
+    capabilities: ["chat", "completion"]
+    max_tokens: 16384
+    cost:
+      input: 0.0001
+      output: 0.0003
+
+  gemini-flash:
+    name: "Gemini 1.5 Flash"
+    capabilities: ["chat", "completion", "vision"]
+    max_tokens: 128000
+    cost:
+      input: 0.000075
+      output: 0.00015
+
+  llama-8b:
+    name: "Llama 3 8B"
+    capabilities: ["chat", "completion"]
+    max_tokens: 8192
+    cost:
+      input: 0.0002
+      output: 0.0002
+
+  # Balanced Tier
+  claude-sonnet:
+    name: "Claude 3.7 Sonnet"
+    capabilities: ["chat", "completion", "vision"]
+    max_tokens: 200000
+    cost:
+      input: 0.003
+      output: 0.015
+
+  gpt-mini:
+    name: "GPT-4.1 Mini"
+    capabilities: ["chat", "completion"]
+    max_tokens: 32768
+    cost:
+      input: 0.0005
+      output: 0.0015
+
+  llama-70b:
+    name: "Llama 3 70B"
+    capabilities: ["chat", "completion"]
+    max_tokens: 8192
+    cost:
+      input: 0.0007
+      output: 0.0007
+
+  llama-scout:
+    name: "Llama 4 Scout"
+    capabilities: ["chat", "completion"]
+    max_tokens: 16384
+    cost:
+      input: 0.0008
+      output: 0.0008
+
+  gemini-balanced:
+    name: "Gemini 2.5 Flash"
+    capabilities: ["chat", "completion", "vision"]
+    max_tokens: 128000
+    cost:
+      input: 0.00015
+      output: 0.0003
+
+  # Frontier Tier
+  claude-opus:
+    name: "Claude Opus 4.1"
+    capabilities: ["chat", "completion", "vision", "analysis"]
+    max_tokens: 200000
+    cost:
+      input: 0.015
+      output: 0.075
+
+  gpt-5:
+    name: "GPT-5 Chat"
+    capabilities: ["chat", "completion", "reasoning"]
+    max_tokens: 128000
+    cost:
+      input: 0.02
+      output: 0.06
+
+  gpt-41:
+    name: "GPT-4.1"
+    capabilities: ["chat", "completion", "vision"]
+    max_tokens: 128000
+    cost:
+      input: 0.01
+      output: 0.03
+
+  llama-405b:
+    name: "Llama 3.1 405B"
+    capabilities: ["chat", "completion"]
+    max_tokens: 32768
+    cost:
+      input: 0.003
+      output: 0.003
+
+  llama-maverick:
+    name: "Llama 4 Maverick"
+    capabilities: ["chat", "completion", "reasoning"]
+    max_tokens: 32768
+    cost:
+      input: 0.002
+      output: 0.002
+
+  gemini-pro:
+    name: "Gemini 2.5 Pro"
+    capabilities: ["chat", "completion", "vision", "analysis"]
+    max_tokens: 128000
+    cost:
+      input: 0.00035
+      output: 0.00105
+
+# ============================================
+# Routing Configuration
+# ============================================
+routing:
+  default_strategy: "tier_based"
+  
+  strategies:
+    # Route by tier first, then by priority/weight
+    tier_based:
+      type: "custom"
+      rules:
+        - match: {tier: "fast"}
+          strategy: "weighted"
+        - match: {tier: "balanced"}
+          strategy: "priority"
+        - match: {tier: "frontier"}
+          strategy: "least_cost"
+    
+    # For cost optimization
+    cost_optimized:
+      type: "custom"
+      rules:
+        - match: {cost_tier: "low"}
+          strategy: "round_robin"
+        - match: {cost_tier: "medium"}
+          strategy: "weighted"
+        - match: {cost_tier: "high"}
+          strategy: "least_cost"
+    
+    # For maximum reliability
+    high_availability:
+      type: "custom"
+      rules:
+        - strategy: "health_weighted"
+          fallback_chain:
+            - {tier: "balanced"}
+            - {tier: "frontier"}
+            - {tier: "fast"}
+  
+  # Fallback configuration
+  fallback:
+    enabled: true
+    strategy: "tier_cascade"  # Fall through tiers
+    max_attempts: 3
+  
+  # Health checking
+  health_check:
+    enabled: true
+    interval: 30s
+    timeout: 5s
+    unhealthy_threshold: 3
+    healthy_threshold: 2
+    
+  # Circuit breaker
+  circuit_breaker:
+    enabled: true
+    failure_threshold: 5
+    recovery_timeout: 30s
+    half_open_requests: 2
