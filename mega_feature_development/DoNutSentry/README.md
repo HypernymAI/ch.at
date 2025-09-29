@@ -2,6 +2,8 @@
 
 DoNutSentry extends ch.at to work through any DNS resolver, enabling LLM queries from restricted networks, embedded devices, and firewalled environments.
 
+<img width="1556" height="876" alt="donutsentryv2" src="https://github.com/user-attachments/assets/83b8fe7d-16a8-478f-9b51-7e2bcbb1c660" />
+
 ## Overview
 
 DoNutSentry solves a critical limitation: ch.at currently requires direct DNS queries to its IP address, which fails behind corporate firewalls, captive portals, and restricted networks. By implementing recursive DNS resolver support with wildcard subdomains, DoNutSentry makes ch.at universally accessible.
