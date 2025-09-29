@@ -348,6 +348,8 @@ dig @ch.at "what-is-dns.q.ch.at" TXT
 
 ### DoNutSentry v2 - Advanced DNS Tunneling
 
+<img width="1556" height="876" alt="donutsentryv2" src="https://github.com/user-attachments/assets/bf9738a0-d6e5-421a-b78c-c41f406e28dc" />
+
 Session-based protocol for unlimited query sizes:
 
 **v2 Features:**
