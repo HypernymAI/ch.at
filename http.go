@@ -511,25 +511,6 @@ const htmlHeader = `<!DOCTYPE html>
         #simplified-controls { display: none; }
         #advanced-controls.hidden { display: none; }
         #simplified-controls.hidden { display: none; }
-        
-        /* Dark mode */
-        @media (prefers-color-scheme: dark) {
-            body { background: #181a1b; color: #e8e6e3; }
-            .chat { background: #222326; }
-            .q { background: #23262a; color: #c9d1d9; }
-            .a { color: #e8e6e3; }
-            input[type="text"], input[type="submit"] { background: #23262a; color: #e8e6e3; border: 1px solid #444; }
-            form { background: #181a1b; }
-            a { color: #58a6ff; }
-            .provider-dropdown, .provider-options, .model-dropdown, .badge-toggle, .metadata-panel {
-                background: #2a2a2a;
-                border-color: #444;
-                color: #e8e6e3;
-            }
-            .provider-option:hover { background: #333; }
-            .mode-toggle label { background: #2a2a2a; border-color: #444; color: #e8e6e3; }
-            .mode-toggle input[type="radio"]:checked + label { background: #58a6ff; color: #000; border-color: #58a6ff; }
-        }
     </style>
 </head>
 <body onload="var c=document.querySelector('.chat');if(c)c.scrollTop=c.scrollHeight;">
