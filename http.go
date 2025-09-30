@@ -1354,7 +1354,15 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 				
 				// Router MUST be available - no fallback!
 				if modelRouter != nil {
-					resp, err = LLMWithRouter(prompt, tierToModel(tier), nil, ch)
+					// Use model from form, or BASIC_OPENAI_MODEL, or tier-based
+					modelToUse := r.FormValue("model")
+					if modelToUse == "" {
+						modelToUse = os.Getenv("BASIC_OPENAI_MODEL")
+						if modelToUse == "" {
+							modelToUse = tierToModel(tier)
+						}
+					}
+					resp, err = LLMWithRouter(prompt, modelToUse, nil, ch)
 				} else {
 					err = fmt.Errorf("model router not initialized")
 				}
@@ -1422,7 +1430,15 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 		
 		// Router MUST be available - no fallback!
 		if modelRouter != nil {
-			llmResp, err = LLMWithRouter(promptToUse, tierToModel(tier), nil, nil)
+			// Use model from form, or BASIC_OPENAI_MODEL, or tier-based
+			modelToUse := r.FormValue("model")
+			if modelToUse == "" {
+				modelToUse = os.Getenv("BASIC_OPENAI_MODEL")
+				if modelToUse == "" {
+					modelToUse = tierToModel(tier)
+				}
+			}
+			llmResp, err = LLMWithRouter(promptToUse, modelToUse, nil, nil)
 		} else {
 			err = fmt.Errorf("model router not initialized")
 		}
@@ -1475,7 +1491,15 @@ func handleRoot(w http.ResponseWriter, r *http.Request) {
 			
 			// Router MUST be available - no fallback!
 			if modelRouter != nil {
-				resp, err = LLMWithRouter(prompt, tierToModel(tier), nil, ch)
+				// Use model from form, or BASIC_OPENAI_MODEL, or tier-based
+				modelToUse := r.FormValue("model")
+				if modelToUse == "" {
+					modelToUse = os.Getenv("BASIC_OPENAI_MODEL")
+					if modelToUse == "" {
+						modelToUse = tierToModel(tier)
+					}
+				}
+				resp, err = LLMWithRouter(prompt, modelToUse, nil, ch)
 			} else {
 				err = fmt.Errorf("model router not initialized")
 			}
