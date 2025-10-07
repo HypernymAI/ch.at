@@ -28,9 +28,10 @@ type DoNutSession struct {
 var (
 	sessions   = &sync.Map{} // session_id -> *DoNutSession
 	sessionTTL = 5 * time.Minute
-	
+
 	// Domain configuration for DoNutSentry
-	donutSentryDomain = getDoNutSentryDomain()
+	donutSentryDomain   = getDoNutSentryDomain()   // v1: reads DONUTSENTRY_DOMAIN env, defaults to .q.ch.at.
+	donutSentryV2Domain = getDoNutSentryV2Domain() // v2: reads DONUTSENTRY_V2_DOMAIN env, defaults to .qp.ch.at.
 )
 
 func getDoNutSentryDomain() string {
@@ -47,6 +48,22 @@ func getDoNutSentryDomain() string {
 	}
 	// Default to the original .q.ch.at. domain
 	return ".q.ch.at."
+}
+
+func getDoNutSentryV2Domain() string {
+	// Allow override via environment variable
+	if domain := os.Getenv("DONUTSENTRY_V2_DOMAIN"); domain != "" {
+		// Ensure it starts with a dot and ends with a dot
+		if !strings.HasPrefix(domain, ".") {
+			domain = "." + domain
+		}
+		if !strings.HasSuffix(domain, ".") {
+			domain = domain + "."
+		}
+		return domain
+	}
+	// Default to the v2 .qp.ch.at. domain
+	return ".qp.ch.at."
 }
 
 func handleDoNutSentryQuery(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Question) {

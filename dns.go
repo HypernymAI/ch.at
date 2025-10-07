@@ -41,8 +41,8 @@ func handleDNS(w dns.ResponseWriter, r *dns.Msg) {
 			continue
 		}
 
-		// Check for DoNutSentry v2 queries (.qp.ch.at)
-		if strings.HasSuffix(q.Name, ".qp.ch.at.") {
+		// Check for DoNutSentry v2 queries (reads DONUTSENTRY_V2_DOMAIN env, defaults to .qp.ch.at.)
+		if strings.HasSuffix(q.Name, donutSentryV2Domain) {
 			log.Printf("[DNS] Routing to DonutSentry v2: %s", q.Name)
 			handleDoNutSentryV2Query(w, r, m, q)
 			// Response is already sent by handleDoNutSentryV2Query

@@ -38,11 +38,11 @@ func init() {
 	go v2SessionCleanup()
 }
 
-// Main v2 handler for .qp.ch.at domain
+// Main v2 handler (domain configurable via DONUTSENTRY_V2_DOMAIN env, defaults to .qp.ch.at.)
 func handleDoNutSentryV2Query(w dns.ResponseWriter, r *dns.Msg, m *dns.Msg, q dns.Question) {
-	// Extract subdomain (everything before .qp.ch.at.)
+	// Extract subdomain (everything before the configured v2 domain)
 	fullName := strings.ToLower(q.Name)
-	subdomain := strings.TrimSuffix(fullName, ".qp.ch.at.")
+	subdomain := strings.TrimSuffix(fullName, donutSentryV2Domain)
 	
 	if debugMode {
 		log.Printf("[DonutSentryV2] === V2 QUERY RECEIVED ===")
